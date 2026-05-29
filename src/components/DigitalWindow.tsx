@@ -676,8 +676,21 @@ export default function DigitalWindow() {
                 className="flex-1 flex flex-col gap-4 min-h-0 justify-between h-full"
               >
                 <div className="flex-1 flex flex-col gap-4 min-h-0">
-                  <div className="flex justify-between items-center px-1 flex-shrink-0">
-                    <h2 className="text-xl font-black tracking-widest uppercase">NOTES</h2>
+                  <div className="flex justify-between items-center px-1 flex-shrink-0 pb-3 border-b-[3px] border-black/15 dark:border-white/10">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-9 h-9 border-[3px] border-black ${isDarkMode ? 'bg-[#FF79C6]' : 'bg-[#FF90E8]'} flex items-center justify-center font-black rounded-sm flex-shrink-0 shadow-[2px_2px_0px_#000]`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5 stroke-black">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
+                        </svg>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[17px] font-black tracking-wider uppercase leading-none">WEB NOTES</span>
+                        <span className="text-[8px] font-mono font-bold uppercase opacity-55 tracking-wider mt-0.5">Workspace</span>
+                      </div>
+                    </div>
                     <button
                       onClick={() => setIsSettingsExpanded(true)}
                       className="p-1.5 border-[3px] border-black bg-white dark:bg-[#343746] text-black dark:text-[#f8f8f2] hover:bg-black/5 dark:hover:bg-white/5 transition-colors active:translate-y-[1px]"

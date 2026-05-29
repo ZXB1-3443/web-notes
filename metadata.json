@@ -1,6 +1,6 @@
 {
-  "name": "Digital Window",
-  "description": "A focused digital workspace featuring ambient looping videos, a beautiful clock, and a gentle vibe switcher.",
+  "name": "Web Notes",
+  "description": "A neo-brutalist custom-styled digital workspace featuring persistent notes, formatting tools, full distraction-free settings, and widgets.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,0 +1,6 @@
+{
+  "name": "Digital Window",
+  "description": "A focused digital workspace featuring ambient looping videos, a beautiful clock, and a gentle vibe switcher.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

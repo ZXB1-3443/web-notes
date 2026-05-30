@@ -7,6 +7,20 @@
   --font-mono: "Space Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: #F2EDDE;
+}
+
+html.dark body, html.dark #root {
+  background-color: #282a36;
+}
+
 /* Custom funky scrollbar */
 ::-webkit-scrollbar {
   width: 12px;

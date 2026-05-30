@@ -14,6 +14,22 @@ type Note = {
   updatedAt: number;
 };
 
+type CustomFont = {
+  id: string;
+  name: string;
+  family: string;
+  url: string;
+};
+
+const PRESET_FONTS = [
+  { name: 'Press Start 2P', family: 'Press Start 2P' },
+  { name: 'Permanent Marker', family: 'Permanent Marker' },
+  { name: 'Creepster', family: 'Creepster' },
+  { name: 'Playfair Display', family: 'Playfair Display' },
+  { name: 'Cinzel', family: 'Cinzel' },
+  { name: 'Special Elite', family: 'Special Elite' }
+];
+
 export default function DigitalWindow() {
   const [notesList, setNotesList] = useState<Note[]>(() => {
     const saved = localStorage.getItem('digital_window_all_notes');
@@ -54,9 +70,74 @@ export default function DigitalWindow() {
     return saved !== 'false';
   });
 
-  const [fontPreference, setFontPreference] = useState<'mono' | 'sans' | 'serif'>(() => {
-    return (localStorage.getItem('digital_window_font') as 'mono' | 'sans' | 'serif') || 'sans';
+  const [fontPreference, setFontPreference] = useState<string>(() => {
+    return localStorage.getItem('digital_window_font') || 'sans';
   });
+
+  const [customFonts, setCustomFonts] = useState<CustomFont[]>(() => {
+    const saved = localStorage.getItem('digital_window_custom_fonts');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [importFontName, setImportFontName] = useState('');
+  const [confirmClearActive, setConfirmClearActive] = useState(false);
+
+  useEffect(() => {
+    if (confirmClearActive) {
+      const timeout = setTimeout(() => {
+        setConfirmClearActive(false);
+      }, 3000);
+      return () => clearTimeout(timeout);
+    }
+  }, [confirmClearActive]);
+
+  useEffect(() => {
+    localStorage.setItem('digital_window_custom_fonts', JSON.stringify(customFonts));
+  }, [customFonts]);
+
+  useEffect(() => {
+    if (!isSidebarOpen) {
+      setIsSettingsExpanded(false);
+    }
+  }, [isSidebarOpen]);
+
+  const handleImportFont = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = importFontName.trim();
+    if (!name) return;
+    
+    // Auto-formatting family name for Google Fonts URL
+    const formattedFamily = name.replace(/\s+/g, '+');
+    const fontUrl = `https://fonts.googleapis.com/css2?family=${formattedFamily}:wght@400;700;900&display=swap`;
+    
+    const newFont: CustomFont = {
+      id: Date.now().toString(),
+      name: name,
+      family: name,
+      url: fontUrl
+    };
+    
+    setCustomFonts(prev => [...prev, newFont]);
+    setFontPreference(`custom-${newFont.id}`);
+    setImportFontName('');
+  };
+
+  const handleImportPreset = (preset: typeof PRESET_FONTS[0]) => {
+    const exists = customFonts.find(f => f.name.toLowerCase() === preset.name.toLowerCase());
+    if (exists) {
+      setFontPreference(`custom-${exists.id}`);
+      return;
+    }
+    const formattedFamily = preset.name.replace(/\s+/g, '+');
+    const newFont: CustomFont = {
+      id: Date.now().toString(),
+      name: preset.name,
+      family: preset.family,
+      url: `https://fonts.googleapis.com/css2?family=${formattedFamily}:wght@400;700;900&display=swap`
+    };
+    setCustomFonts(prev => [...prev, newFont]);
+    setFontPreference(`custom-${newFont.id}`);
+  };
 
   const [focusMode, setFocusMode] = useState(() => {
     return localStorage.getItem('digital_window_focus') === 'true';
@@ -134,6 +215,40 @@ export default function DigitalWindow() {
   const clearFormatting = () => {
     if (!editor) return;
     editor.chain().focus().clearNodes().unsetAllMarks().run();
+    setContextMenu(null);
+  };
+
+  const removeAllTimestampsInNote = () => {
+    if (!editor) return;
+    const currentHtml = editor.getHTML();
+    const cleanedHtml = currentHtml.replace(/\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\]\s?/g, '');
+    editor.commands.setContent(cleanedHtml);
+    setContextMenu(null);
+  };
+
+  const removeAllHorizontalLinesInNote = () => {
+    if (!editor) return;
+    const currentHtml = editor.getHTML();
+    const cleanedHtml = currentHtml.replace(/<hr\s*\/?>/g, '');
+    editor.commands.setContent(cleanedHtml);
+    setContextMenu(null);
+  };
+
+  const deleteCurrentBlockOrSelection = () => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    if (from === to) {
+      editor.chain().focus().selectParentNode().deleteSelection().run();
+    } else {
+      editor.chain().focus().deleteSelection().run();
+    }
+    setContextMenu(null);
+  };
+
+  const clearActiveNoteContent = () => {
+    if (!editor) return;
+    editor.commands.setContent('');
+    setConfirmClearActive(false);
     setContextMenu(null);
   };
 
@@ -534,8 +649,30 @@ export default function DigitalWindow() {
     <div 
       onContextMenu={handleContextMenu}
       style={{ backgroundImage: isDarkMode ? 'radial-gradient(#ffffff08 3px, transparent 3px)' : 'radial-gradient(#00000008 3px, transparent 3px)', backgroundSize: '32px 32px' }}
-      className={`relative w-full h-screen flex flex-row font-sans overflow-hidden transition-colors duration-200 ${isDarkMode ? 'bg-[#282a36] text-[#f8f8f2]' : 'bg-[#F2EDDE] text-black'}`}
+      className={`relative w-full h-screen h-[100dvh] flex flex-row font-sans overflow-hidden transition-colors duration-200 ${isDarkMode ? 'bg-[#282a36] text-[#f8f8f2]' : 'bg-[#F2EDDE] text-black'}`}
     >
+      {/* Dynamically Register Styles for Custom Imported Fonts */}
+      {customFonts.map(font => (
+        <React.Fragment key={font.id}>
+          {font.url && (
+            <link 
+              rel="stylesheet" 
+              href={font.url} 
+              id={`font-style-link-${font.id}`}
+            />
+          )}
+          <style>
+            {`
+              .editor-wrap-custom-${font.id} .tiptap {
+                font-family: '${font.family}', sans-serif !important;
+              }
+              .editor-wrap-custom-${font.id} .title-input-field {
+                font-family: '${font.family}', sans-serif !important;
+              }
+            `}
+          </style>
+        </React.Fragment>
+      ))}
       {/* Sidebar Overlay on Mobile/Tablet */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -565,7 +702,15 @@ export default function DigitalWindow() {
         onMouseLeave={handleMouseLeave}
         className={`sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-black ${isDarkMode ? 'bg-[#1e1f29] text-[#f8f8f2]' : 'bg-[#F2EDDE] text-black'} absolute md:relative left-0 top-0 bottom-0`}
       >
-        <div className="w-screen sm:w-[384px] max-w-full h-full p-6 flex flex-col gap-6 font-sans justify-between">
+        <div 
+          style={{
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+            paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 24px)',
+            paddingRight: 'calc(env(safe-area-inset-right, 0px) + 24px)'
+          }}
+          className="w-screen sm:w-[384px] max-w-full h-full flex flex-col gap-6 font-sans justify-between"
+        >
           <AnimatePresence mode="wait">
             {isSettingsExpanded ? (
               <motion.div
@@ -637,7 +782,7 @@ export default function DigitalWindow() {
                     <div className="flex flex-col gap-1.5 mt-2">
                       <span className="text-xs uppercase tracking-wider font-black opacity-85 px-1">Editor Font Style</span>
                       <div className="grid grid-cols-3 gap-1 border-[3px] border-black p-1 bg-white dark:bg-[#282a36]">
-                        {(['mono', 'sans', 'serif'] as const).map(f => (
+                        {(['sans', 'mono', 'serif'] as const).map(f => (
                           <button
                             key={f}
                             onClick={() => setFontPreference(f)}
@@ -650,6 +795,104 @@ export default function DigitalWindow() {
                             {f}
                           </button>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* Custom Imported Fonts Manager */}
+                    <div className="flex flex-col gap-2 mt-2 border-t-[3px] border-black/10 dark:border-white/10 pt-2.5">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-xs uppercase tracking-wider font-black opacity-85">Custom Google Fonts</span>
+                        {customFonts.length > 0 && (
+                          <span className="text-[10px] font-mono opacity-50 font-bold">{customFonts.length} active</span>
+                        )}
+                      </div>
+
+                      {/* Imported Fonts List */}
+                      {customFonts.length > 0 && (
+                        <div className="flex flex-col gap-1.5 max-h-[140px] overflow-y-auto custom-scrollbar p-1 bg-black/5 dark:bg-white/5 border-[3px] border-black rounded-sm">
+                          {customFonts.map(font => (
+                            <div key={font.id} className="flex items-center justify-between gap-1 bg-white dark:bg-[#282a36] p-1 border-2 border-black/10 dark:border-white/10 rounded-sm">
+                              <button
+                                onClick={() => setFontPreference(`custom-${font.id}`)}
+                                style={{ fontFamily: font.family }}
+                                className={`flex-1 text-left px-2 py-1 text-xs font-black truncate rounded-sm leading-none ${
+                                  fontPreference === `custom-${font.id}`
+                                    ? 'bg-black text-white dark:bg-[#50fa7b] dark:text-black font-extrabold'
+                                    : 'text-black dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/5'
+                                }`}
+                              >
+                                {font.name}
+                              </button>
+                              
+                              <button
+                                onClick={() => {
+                                  setCustomFonts(prev => prev.filter(f => f.id !== font.id));
+                                  if (fontPreference === `custom-${font.id}`) {
+                                    setFontPreference('sans');
+                                  }
+                                }}
+                                className="p-1 text-red-500 hover:bg-red-500/10 dark:hover:bg-red-500/20 rounded-sm transition-colors"
+                                title="Delete custom font"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Input importation Form */}
+                      <form onSubmit={handleImportFont} className="flex flex-col gap-2 bg-black/5 dark:bg-white/5 p-2.5 border-[3px] border-black rounded-sm">
+                        <input
+                          type="text"
+                          value={importFontName}
+                          onChange={(e) => setImportFontName(e.target.value)}
+                          placeholder="Type any Google Font (e.g. Space Grotesk)"
+                          className="w-full text-xs font-mono p-2 border-2 border-black bg-white text-black dark:bg-[#282a36] dark:text-[#f8f8f2] placeholder:opacity-40 focus:outline-none"
+                        />
+
+                        <button
+                          type="submit"
+                          disabled={!importFontName.trim()}
+                          className={`w-full py-2 font-black uppercase text-xs border-[3px] border-black transition-all ${
+                            importFontName.trim()
+                              ? 'bg-[#FF79C6] text-black hover:bg-[#ff90e8] active:translate-y-[1px] cursor-pointer shadow-[2px_2px_0px_#000]'
+                              : 'bg-black/10 dark:bg-white/10 text-black/40 dark:text-white/40 cursor-not-allowed border-black/20'
+                          }`}
+                        >
+                          Add Font
+                        </button>
+                      </form>
+
+                      {/* Quick preset loader */}
+                      <div className="flex flex-col gap-1.5 px-1 mt-2">
+                        <span className="text-[10px] font-mono uppercase font-black opacity-60">Or choose a preset:</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          {PRESET_FONTS.map(preset => {
+                            const activeFontObj = customFonts.find(f => f.name.toLowerCase() === preset.name.toLowerCase());
+                            const isCurrentlyActive = activeFontObj && fontPreference === `custom-${activeFontObj.id}`;
+                            
+                            return (
+                              <button
+                                key={preset.name}
+                                type="button"
+                                onClick={() => handleImportPreset(preset)}
+                                className={`py-2 px-2.5 text-xs font-black border-[3px] border-black transition-all cursor-pointer rounded-sm shadow-[2px_2px_0px_#000] active:translate-y-[1px] active:shadow-none flex items-center justify-between gap-1 select-none capitalize ${
+                                  isCurrentlyActive 
+                                    ? (isDarkMode ? 'bg-[#50fa7b] text-black' : 'bg-[#FF79C6] text-black')
+                                    : (isDarkMode ? 'bg-[#282a36] text-[#f8f8f2] hover:bg-[#343746]' : 'bg-white text-black hover:bg-neutral-100')
+                                }`}
+                              >
+                                <span className="truncate leading-none">{preset.name}</span>
+                                {isCurrentlyActive ? (
+                                  <Check size={11} className="flex-shrink-0" />
+                                ) : (
+                                  <Plus size={11} className="flex-shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
 
@@ -678,7 +921,7 @@ export default function DigitalWindow() {
                 <div className="flex-1 flex flex-col gap-4 min-h-0">
                   <div className="flex justify-between items-center px-1 flex-shrink-0 pb-3 border-b-[3px] border-black/15 dark:border-white/10">
                     <div className="flex items-center gap-2.5">
-                      <div className={`w-9 h-9 border-[3px] border-black ${isDarkMode ? 'bg-[#FF79C6]' : 'bg-[#FF90E8]'} flex items-center justify-center font-black rounded-sm flex-shrink-0 shadow-[2px_2px_0px_#000]`}>
+                      <div className="w-9 h-9 border-[3px] border-black bg-[#FFE800] flex items-center justify-center font-black rounded-sm flex-shrink-0 shadow-[2px_2px_0px_#000]">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5 stroke-black">
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                           <polyline points="14 2 14 8 20 8" />
@@ -692,11 +935,14 @@ export default function DigitalWindow() {
                       </div>
                     </div>
                     <button
-                      onClick={() => setIsSettingsExpanded(true)}
-                      className="p-1.5 border-[3px] border-black bg-white dark:bg-[#343746] text-black dark:text-[#f8f8f2] hover:bg-black/5 dark:hover:bg-white/5 transition-colors active:translate-y-[1px]"
-                      title="Open Settings"
+                      onClick={() => {
+                        setIsSidebarPinned(false);
+                        setIsSidebarHovered(false);
+                      }}
+                      className={`p-1.5 border-[3px] border-black ${isDarkMode ? 'bg-[#FF79C6] text-black' : 'bg-[#FF90E8] text-black'} hover:bg-black/5 dark:hover:bg-white/5 transition-colors active:translate-y-[1px] cursor-pointer`}
+                      title="Close Menu"
                     >
-                      <Settings size={18} />
+                      <MenuIcon size={18} />
                     </button>
                   </div>
                   <button 
@@ -802,19 +1048,28 @@ export default function DigitalWindow() {
       {/* Main Container Area */}
       <div className="flex-1 h-full flex flex-col min-h-0 min-w-0 relative z-10">
         {/* Top Navbar */}
-        <nav className={`w-full px-4 py-3 sm:px-6 sm:py-5 flex flex-row justify-between items-center gap-2 sm:gap-6 font-bold text-sm tracking-wide relative z-20 flex-shrink-0 transition-opacity duration-300 ${focusMode ? 'opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}>
+        <nav 
+          style={{
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+            paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 16px)',
+            paddingRight: 'calc(env(safe-area-inset-right, 0px) + 16px)'
+          }}
+          className={`w-full flex flex-row justify-between items-center gap-2 sm:gap-6 font-bold text-sm tracking-wide relative z-20 flex-shrink-0 transition-opacity duration-300 ${focusMode ? 'opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}
+        >
           
           <div className="flex sm:flex-1 justify-start gap-4 items-center flex-shrink-0">
-            <button
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-              onClick={() => setIsSidebarPinned(p => !p)}
-              className={`menu-btn ${actionBtn} ${isDarkMode ? 'bg-[#FF79C6] text-black' : 'bg-[#FF90E8] text-black'} ${isSidebarPinned ? 'shadow-none translate-x-[3px] translate-y-[3px]' : ''}`}
-              title="Menu"
-            >
-              <MenuIcon size={20} className="flex-shrink-0" />
-              <span className="hidden sm:inline">MENU</span>
-            </button>
+            {!isSidebarOpen && (
+              <button
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+                onClick={() => setIsSidebarPinned(p => !p)}
+                className={`menu-btn ${actionBtn} ${isDarkMode ? 'bg-[#FF79C6] text-black' : 'bg-[#FF90E8] text-black'} ${isSidebarPinned ? 'shadow-none translate-x-[3px] translate-y-[3px]' : ''}`}
+                title="Menu"
+              >
+                <MenuIcon size={20} className="flex-shrink-0" />
+                <span className="hidden sm:inline">MENU</span>
+              </button>
+            )}
           </div>
           
           <div className="hidden sm:flex justify-center flex-shrink-0 min-w-[120px] h-[46px]">
@@ -909,6 +1164,7 @@ export default function DigitalWindow() {
                spellCheck={false}
             />
           </div>
+
           <div className="w-full max-w-[1600px] flex-1 flex-shrink-0 relative">
             {editor && (
               <BubbleMenu 
@@ -1008,7 +1264,11 @@ export default function DigitalWindow() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 20 }}
-              className={`fixed bottom-4 right-4 z-40 border-[3px] border-black ${funkyShadow} px-4 py-2 font-mono text-xs font-black flex items-center gap-4 ${isDarkMode ? 'bg-[#BD93F9] text-black' : 'bg-white text-black'}`}
+              style={{
+                bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+                right: 'calc(env(safe-area-inset-right, 0px) + 16px)'
+              }}
+              className={`fixed z-40 border-[3px] border-black ${funkyShadow} px-4 py-2 font-mono text-xs font-black flex items-center gap-4 ${isDarkMode ? 'bg-[#BD93F9] text-black' : 'bg-white text-black'}`}
             >
               <span>{words} WORDS</span>
               <div className="w-1 h-3 bg-black/40" />
@@ -1327,6 +1587,44 @@ export default function DigitalWindow() {
                   <span className="text-[9px] font-mono opacity-40">---</span>
                 </button>
 
+                {/* Selective Erase & Clean Section */}
+                <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">
+                  Selective Erase
+                </div>
+
+                <button
+                  disabled={!editor}
+                  onClick={removeAllTimestampsInNote}
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#ffb86c] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                >
+                  <span className="flex items-center gap-2">
+                    <Eraser size={14} className="text-[#ffb86c]" />
+                    <span>Clear Timestamps</span>
+                  </span>
+                </button>
+
+                <button
+                  disabled={!editor}
+                  onClick={removeAllHorizontalLinesInNote}
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#8be9fd] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                >
+                  <span className="flex items-center gap-2">
+                    <Minus size={14} className="text-[#8be9fd]" />
+                    <span>Clear Dividers</span>
+                  </span>
+                </button>
+
+                <button
+                  disabled={!editor}
+                  onClick={deleteCurrentBlockOrSelection}
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#ff5555] hover:text-white border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-[#ff5555] hover:!text-white cursor-pointer disabled:opacity-30"
+                >
+                  <span className="flex items-center gap-2">
+                    <Trash2 size={14} />
+                    <span>Delete Cursor Line</span>
+                  </span>
+                </button>
+
                 {/* Appearance Section */}
                 <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">
                   View & Mode
@@ -1399,29 +1697,6 @@ export default function DigitalWindow() {
                     <span className="text-[9px] font-mono opacity-50">⌘⇧S</span>
                   </div>
                 </button>
-
-                {/* Font Style Row */}
-                <div className="border-t-2 border-black/10 dark:border-white/10 pt-1.5 mt-1 flex flex-col gap-1">
-                  <div className="px-2 text-[9px] font-mono tracking-widest opacity-50 uppercase select-none">Editor Font</div>
-                  <div className="grid grid-cols-3 gap-0.5 px-1 pb-1">
-                    {(['sans', 'mono', 'serif'] as const).map(font => (
-                      <button
-                        key={font}
-                        onClick={() => {
-                          setFontPreference(font);
-                          setContextMenu(null);
-                        }}
-                        className={`py-1 text-[10px] font-black uppercase border-[2px] transition-all duration-75 cursor-pointer ${
-                          fontPreference === font
-                            ? 'bg-black text-white border-black dark:bg-[#50fa7b] dark:text-black dark:border-[#50fa7b]'
-                            : 'bg-transparent border-transparent text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'
-                        }`}
-                      >
-                        {font}
-                      </button>
-                    ))}
-                  </div>
-                </div>
 
                 {/* Selection Stats Strip (Only visible if there is selected text) */}
                 {selection.hasSelection && (

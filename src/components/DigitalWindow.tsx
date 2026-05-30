@@ -1251,6 +1251,14 @@ export default function DigitalWindow() {
                 >
                   <Quote size={16} />
                 </button>
+                <div className="w-px h-6 bg-black/20 dark:bg-white/20 my-auto mx-1" />
+                <button
+                  onClick={() => editor.chain().focus().deleteSelection().run()}
+                  className="p-2 rounded hover:bg-red-500/20 text-red-500 dark:text-red-400"
+                  title="Delete Selection"
+                >
+                  <Trash2 size={16} />
+                </button>
               </BubbleMenu>
             )}
             <EditorContent editor={editor} />

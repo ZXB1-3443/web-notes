@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Maximize, Edit3, Moon, Sun, Menu as MenuIcon, Plus, X, Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Undo, Redo, Settings, Search, Download, ChevronDown, ChevronUp, Trash2, Check, Eye, EyeOff, Clock, Minus, Eraser, Info } from 'lucide-react';
+import { Maximize, Edit3, Moon, Sun, Menu as MenuIcon, Plus, X, Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Undo, Redo, Settings, Search, Download, ChevronDown, ChevronUp, Trash2, Check, Eye, EyeOff, Clock, Minus, Eraser, Info, Copy, Clipboard } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
@@ -1537,7 +1537,46 @@ export default function DigitalWindow() {
                   <span className="flex items-center gap-2"><Trash2 size={14} /> Delete Note</span>
                 </button>
 
+                {/* Clipboard Actions */}
+                <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">
+                  Clipboard
+                </div>
 
+                <button
+                  disabled={!editor || !selection.hasSelection}
+                  onClick={async () => {
+                    if (!editor) return;
+                    const { from, to } = editor.state.selection;
+                    if (from === to) return;
+                    const selectedText = editor.state.doc.textBetween(from, to, ' ');
+                    try {
+                      await navigator.clipboard.writeText(selectedText);
+                    } catch (err) {
+                      console.error("Copy failed: ", err);
+                    }
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                >
+                  <span className="flex items-center gap-2"><Copy size={14} /> Copy</span>
+                </button>
+
+                <button
+                  disabled={!editor}
+                  onClick={async () => {
+                    if (!editor) return;
+                    try {
+                      const text = await navigator.clipboard.readText();
+                      editor.chain().focus().insertContent(text).run();
+                    } catch (err) {
+                      console.error("Paste failed: ", err);
+                    }
+                    setContextMenu(null);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                >
+                  <span className="flex items-center gap-2"><Clipboard size={14} /> Paste</span>
+                </button>
 
                 {/* Insertion & Snippets Section */}
                 <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">

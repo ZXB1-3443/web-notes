@@ -14,11 +14,11 @@ html, body, #root {
   height: 100%;
   height: 100dvh;
   overflow: hidden;
-  background-color: #F2EDDE;
+  background-color: #F5F4F0;
 }
 
 html.dark body, html.dark #root {
-  background-color: #282a36;
+  background-color: #121212;
 }
 
 /* Custom funky scrollbar */
@@ -29,17 +29,47 @@ html.dark body, html.dark #root {
   background: transparent;
   border-left: 3px solid #000;
 }
+.dark ::-webkit-scrollbar-track {
+  border-left: 3px solid #fff;
+}
 ::-webkit-scrollbar-thumb {
-  background: #FF007F;
+  background: #1c1c1c;
   border-left: 3px solid #000;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: #BD93F9;
+  background: #e4e4e7;
+  border-left: 3px solid #fff;
 }
 
 /* Tiptap Editor Styles */
 .tiptap {
   outline: none;
+}
+.tiptap hr {
+  border: none;
+  border-top: 3.5px dashed currentColor;
+  opacity: 0.35;
+  margin: 2rem 0;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+.tiptap hr:hover {
+  opacity: 1 !important;
+  border-top-style: dashed;
+  color: #000 !important;
+}
+.dark .tiptap hr:hover {
+  color: #fff !important;
+}
+.tiptap hr.ProseMirror-selectednode {
+  opacity: 1 !important;
+  color: #000 !important;
+  outline: 3.5px solid #000 !important;
+  outline-offset: 4px;
+}
+.dark .tiptap hr.ProseMirror-selectednode {
+  color: #fff !important;
+  outline: 3.5px solid #fff !important;
 }
 .tiptap > *:first-child {
   margin-top: 0;

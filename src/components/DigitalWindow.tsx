@@ -14,21 +14,157 @@ type Note = {
   updatedAt: number;
 };
 
-type CustomFont = {
-  id: string;
-  name: string;
-  family: string;
-  url: string;
+const formatClockTime = (date: Date) => {
+  const hoursNum = date.getHours();
+  const ampm = hoursNum >= 12 ? 'PM' : 'AM';
+  const hours12 = hoursNum % 12 || 12;
+  const hoursStr = String(hours12).padStart(2, '0');
+  const minutesStr = String(date.getMinutes()).padStart(2, '0');
+  const secondsStr = String(date.getSeconds()).padStart(2, '0');
+  const dayStr = date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+  
+  return {
+    hoursStr,
+    minutesStr,
+    secondsStr,
+    ampm,
+    dayStr,
+    dateStr
+  };
 };
 
-const PRESET_FONTS = [
-  { name: 'Press Start 2P', family: 'Press Start 2P' },
-  { name: 'Permanent Marker', family: 'Permanent Marker' },
-  { name: 'Creepster', family: 'Creepster' },
-  { name: 'Playfair Display', family: 'Playfair Display' },
-  { name: 'Cinzel', family: 'Cinzel' },
-  { name: 'Special Elite', family: 'Special Elite' }
+export type ThemeVariant = {
+  bg: string;
+  sidebarBg: string;
+  text: string;
+  activeNoteBg: string;
+  activeNoteText: string;
+  cardBg: string;
+  cardText: string;
+};
+
+export type AppTheme = {
+  id: string;
+  name: string;
+  light: ThemeVariant;
+  dark: ThemeVariant;
+};
+
+const APP_THEMES: AppTheme[] = [
+  {
+    id: 'default',
+    name: 'Classic Slate',
+    light: {
+      bg: '#F5F4F0',
+      sidebarBg: '#EFECE6',
+      text: '#000000',
+      cardBg: '#FFFFFF',
+      cardText: '#000000',
+      activeNoteBg: '#EADECE',
+      activeNoteText: '#000000'
+    },
+    dark: {
+      bg: '#121212',
+      sidebarBg: '#18181B',
+      text: '#F4F4F5',
+      cardBg: '#1C1C1E',
+      cardText: '#F4F4F5',
+      activeNoteBg: '#EADECE',
+      activeNoteText: '#000000'
+    }
+  },
+  {
+    id: 'funky',
+    name: 'Vintage Funky',
+    light: {
+      bg: '#F2EDDE',
+      sidebarBg: '#EADECE',
+      text: '#372517',
+      cardBg: '#FFFFFF',
+      cardText: '#372517',
+      activeNoteBg: '#FFDE4D',
+      activeNoteText: '#000000'
+    },
+    dark: {
+      bg: '#1e1f29',
+      sidebarBg: '#14151f',
+      text: '#f8f8f2',
+      cardBg: '#282a36',
+      cardText: '#f8f8f2',
+      activeNoteBg: '#ff79c6',
+      activeNoteText: '#000000'
+    }
+  },
+  {
+    id: 'cyber',
+    name: 'Cyber Retro',
+    light: {
+      bg: '#E0F7FA',
+      sidebarBg: '#B2EBF2',
+      text: '#006064',
+      cardBg: '#FFFFFF',
+      cardText: '#006064',
+      activeNoteBg: '#FF4081',
+      activeNoteText: '#FFFFFF'
+    },
+    dark: {
+      bg: '#0D0E15',
+      sidebarBg: '#151726',
+      text: '#00FF9C',
+      cardBg: '#1E2235',
+      cardText: '#00E5FF',
+      activeNoteBg: '#FF007F',
+      activeNoteText: '#FFFFFF'
+    }
+  },
+  {
+    id: 'forest',
+    name: 'Forest Moss',
+    light: {
+      bg: '#E8EFE9',
+      sidebarBg: '#D1E0D4',
+      text: '#1E2B22',
+      cardBg: '#FAF7F2',
+      cardText: '#1E2B22',
+      activeNoteBg: '#A3BFA8',
+      activeNoteText: '#1E2B22'
+    },
+    dark: {
+      bg: '#0F1511',
+      sidebarBg: '#151C17',
+      text: '#E2ECE9',
+      cardBg: '#1D2721',
+      cardText: '#E2ECE9',
+      activeNoteBg: '#5EA175',
+      activeNoteText: '#FFFFFF'
+    }
+  },
+  {
+    id: 'velvet',
+    name: 'Royal Velvet',
+    light: {
+      bg: '#F3E5F5',
+      sidebarBg: '#E1BEE7',
+      text: '#4A148C',
+      cardBg: '#FFFFFF',
+      cardText: '#4A148C',
+      activeNoteBg: '#D500F9',
+      activeNoteText: '#FFFFFF'
+    },
+    dark: {
+      bg: '#0F091D',
+      sidebarBg: '#19112E',
+      text: '#E1D9F5',
+      cardBg: '#231842',
+      cardText: '#F1E6FF',
+      activeNoteBg: '#8A2BE2',
+      activeNoteText: '#FFFFFF'
+    }
+  }
 ];
+
+
 
 export default function DigitalWindow() {
   const [notesList, setNotesList] = useState<Note[]>(() => {
@@ -56,7 +192,15 @@ export default function DigitalWindow() {
   const [isSidebarPinned, setIsSidebarPinned] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
   const isSidebarOpen = isSidebarPinned || isSidebarHovered;
+  
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('digital_window_theme') === 'dark');
+
+  const [selectedThemeId, setSelectedThemeId] = useState<string>(() => {
+    return localStorage.getItem('digital_window_theme_id') || 'default';
+  });
+
+  const activeTheme = APP_THEMES.find(t => t.id === selectedThemeId) || APP_THEMES[0];
+  const themeModeSettings = isDarkMode ? activeTheme.dark : activeTheme.light;
 
   const [time, setTime] = useState(new Date());
 
@@ -71,15 +215,11 @@ export default function DigitalWindow() {
   });
 
   const [fontPreference, setFontPreference] = useState<string>(() => {
-    return localStorage.getItem('digital_window_font') || 'sans';
+    const saved = localStorage.getItem('digital_window_font');
+    if (saved && ['sans', 'mono', 'serif'].includes(saved)) return saved;
+    return 'sans';
   });
 
-  const [customFonts, setCustomFonts] = useState<CustomFont[]>(() => {
-    const saved = localStorage.getItem('digital_window_custom_fonts');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [importFontName, setImportFontName] = useState('');
   const [confirmClearActive, setConfirmClearActive] = useState(false);
 
   useEffect(() => {
@@ -92,52 +232,10 @@ export default function DigitalWindow() {
   }, [confirmClearActive]);
 
   useEffect(() => {
-    localStorage.setItem('digital_window_custom_fonts', JSON.stringify(customFonts));
-  }, [customFonts]);
-
-  useEffect(() => {
     if (!isSidebarOpen) {
       setIsSettingsExpanded(false);
     }
   }, [isSidebarOpen]);
-
-  const handleImportFont = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = importFontName.trim();
-    if (!name) return;
-    
-    // Auto-formatting family name for Google Fonts URL
-    const formattedFamily = name.replace(/\s+/g, '+');
-    const fontUrl = `https://fonts.googleapis.com/css2?family=${formattedFamily}:wght@400;700;900&display=swap`;
-    
-    const newFont: CustomFont = {
-      id: Date.now().toString(),
-      name: name,
-      family: name,
-      url: fontUrl
-    };
-    
-    setCustomFonts(prev => [...prev, newFont]);
-    setFontPreference(`custom-${newFont.id}`);
-    setImportFontName('');
-  };
-
-  const handleImportPreset = (preset: typeof PRESET_FONTS[0]) => {
-    const exists = customFonts.find(f => f.name.toLowerCase() === preset.name.toLowerCase());
-    if (exists) {
-      setFontPreference(`custom-${exists.id}`);
-      return;
-    }
-    const formattedFamily = preset.name.replace(/\s+/g, '+');
-    const newFont: CustomFont = {
-      id: Date.now().toString(),
-      name: preset.name,
-      family: preset.family,
-      url: `https://fonts.googleapis.com/css2?family=${formattedFamily}:wght@400;700;900&display=swap`
-    };
-    setCustomFonts(prev => [...prev, newFont]);
-    setFontPreference(`custom-${newFont.id}`);
-  };
 
   const [focusMode, setFocusMode] = useState(() => {
     return localStorage.getItem('digital_window_focus') === 'true';
@@ -145,6 +243,7 @@ export default function DigitalWindow() {
 
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; visible: boolean } | null>(null);
+  const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
   const contextMenuRef = React.useRef<HTMLDivElement>(null);
 
   const getStats = () => {
@@ -339,7 +438,7 @@ export default function DigitalWindow() {
     },
     editorProps: {
       attributes: {
-        class: `tiptap w-full min-h-[50vh] bg-transparent border-0 px-4 sm:px-12 md:px-20 lg:px-32 xl:px-48 text-xl sm:text-2xl md:text-3xl font-mono leading-relaxed placeholder:opacity-30 focus:ring-0 focus:outline-none z-10 relative overflow-hidden ${isDarkMode ? 'text-[#f8f8f2]' : 'text-[#111]'}`,
+        class: `tiptap w-full min-h-[50vh] bg-transparent border-0 px-4 sm:px-12 md:px-20 lg:px-32 xl:px-48 text-xl sm:text-2xl md:text-3xl font-mono leading-relaxed placeholder:opacity-30 focus:ring-0 focus:outline-none z-10 relative overflow-hidden text-inherit`,
         spellcheck: "true",
       },
     },
@@ -385,6 +484,9 @@ export default function DigitalWindow() {
   }, [isSidebarPinned]);
 
   const handleMouseEnter = () => {
+    if (typeof window !== 'undefined' && !window.matchMedia('(hover: hover)').matches) {
+      return;
+    }
     hoverRef.current = true;
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     hoverTimeoutRef.current = setTimeout(() => {
@@ -395,6 +497,9 @@ export default function DigitalWindow() {
   };
 
   const handleMouseLeave = () => {
+    if (typeof window !== 'undefined' && !window.matchMedia('(hover: hover)').matches) {
+      return;
+    }
     hoverRef.current = false;
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     setTimeout(() => {
@@ -440,6 +545,12 @@ export default function DigitalWindow() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDarkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('digital_window_theme_id', selectedThemeId);
+  }, [selectedThemeId]);
+
+
 
   useEffect(() => {
     localStorage.setItem('digital_window_show_clock', String(showClock));
@@ -502,7 +613,7 @@ export default function DigitalWindow() {
 
   const handleDeleteNote = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    deleteNoteById(id);
+    setNoteToDelete(id);
   };
 
   useEffect(() => {
@@ -558,7 +669,7 @@ export default function DigitalWindow() {
       if (isMeta && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) {
         e.preventDefault();
         if (activeNoteId) {
-          deleteNoteById(activeNoteId);
+          setNoteToDelete(activeNoteId);
         }
       }
 
@@ -648,31 +759,15 @@ export default function DigitalWindow() {
   return (
     <div 
       onContextMenu={handleContextMenu}
-      style={{ backgroundImage: isDarkMode ? 'radial-gradient(#ffffff08 3px, transparent 3px)' : 'radial-gradient(#00000008 3px, transparent 3px)', backgroundSize: '32px 32px' }}
-      className={`relative w-full h-screen h-[100dvh] flex flex-row font-sans overflow-hidden transition-colors duration-200 ${isDarkMode ? 'bg-[#282a36] text-[#f8f8f2]' : 'bg-[#F2EDDE] text-black'}`}
+      style={{ 
+        backgroundImage: isDarkMode ? 'radial-gradient(#ffffff08 3px, transparent 3px)' : 'radial-gradient(#00000008 3px, transparent 3px)', 
+        backgroundSize: '32px 32px',
+        backgroundColor: themeModeSettings.bg,
+        color: themeModeSettings.text
+      }}
+      className={`relative w-full h-screen h-[100dvh] flex flex-row font-sans overflow-hidden transition-colors duration-200`}
     >
-      {/* Dynamically Register Styles for Custom Imported Fonts */}
-      {customFonts.map(font => (
-        <React.Fragment key={font.id}>
-          {font.url && (
-            <link 
-              rel="stylesheet" 
-              href={font.url} 
-              id={`font-style-link-${font.id}`}
-            />
-          )}
-          <style>
-            {`
-              .editor-wrap-custom-${font.id} .tiptap {
-                font-family: '${font.family}', sans-serif !important;
-              }
-              .editor-wrap-custom-${font.id} .title-input-field {
-                font-family: '${font.family}', sans-serif !important;
-              }
-            `}
-          </style>
-        </React.Fragment>
-      ))}
+
       {/* Sidebar Overlay on Mobile/Tablet */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -697,19 +792,23 @@ export default function DigitalWindow() {
           borderRightWidth: isSidebarOpen ? 3 : 0,
           boxShadow: isSidebarOpen ? "8px 0px 0px #000" : "0px 0px 0px #000"
         }}
+        style={{
+          backgroundColor: themeModeSettings.sidebarBg,
+          color: themeModeSettings.text
+        }}
         transition={{ duration: 0.2, ease: "easeOut" }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className={`sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-black ${isDarkMode ? 'bg-[#1e1f29] text-[#f8f8f2]' : 'bg-[#F2EDDE] text-black'} absolute md:relative left-0 top-0 bottom-0`}
+        className="sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-black absolute md:relative left-0 top-0 bottom-0 transition-colors duration-200"
       >
         <div 
           style={{
-            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
-            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
-            paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 24px)',
-            paddingRight: 'calc(env(safe-area-inset-right, 0px) + 24px)'
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+            paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 16px)',
+            paddingRight: 'calc(env(safe-area-inset-right, 0px) + 16px)'
           }}
-          className="w-screen sm:w-[384px] max-w-full h-full flex flex-col gap-6 font-sans justify-between"
+          className="w-screen sm:w-[384px] max-w-full h-full flex flex-col gap-4 sm:gap-6 font-sans justify-between box-border min-h-0"
         >
           <AnimatePresence mode="wait">
             {isSettingsExpanded ? (
@@ -719,7 +818,7 @@ export default function DigitalWindow() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
                 transition={{ duration: 0.15 }}
-                className="flex-1 flex flex-col gap-4 min-h-0 justify-between h-full"
+                className="flex-1 flex flex-col gap-3 sm:gap-4 min-h-0 justify-between"
               >
                 <div className="flex-1 flex flex-col gap-4 min-h-0">
                   <div className="flex justify-between items-center px-1 flex-shrink-0 pb-3 border-b-[3px] border-black">
@@ -734,10 +833,21 @@ export default function DigitalWindow() {
                       {/* Show Clock */}
                       <button
                         onClick={() => setShowClock(prev => !prev)}
-                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive} ${showClock ? (isDarkMode ? 'bg-[#50fa7b] text-black' : 'bg-[#00E5FF] text-black') : (isDarkMode ? 'bg-[#44475a] text-[#8be9fd]' : 'bg-white text-black')}`}
+                        style={{
+                          backgroundColor: showClock ? themeModeSettings.text : themeModeSettings.cardBg,
+                          color: showClock ? themeModeSettings.bg : themeModeSettings.cardText
+                        }}
+                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
                       >
                         <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Show Clock</span>
-                        <div className={`w-5 h-5 border-[3px] border-black flex items-center justify-center font-black text-xs ${showClock ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-transparent'}`}>
+                        <div 
+                          style={{
+                            borderColor: showClock ? themeModeSettings.bg : themeModeSettings.cardText,
+                            backgroundColor: showClock ? themeModeSettings.bg : 'transparent',
+                            color: themeModeSettings.text
+                          }}
+                          className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
+                        >
                           {showClock && "✓"}
                         </div>
                       </button>
@@ -745,10 +855,21 @@ export default function DigitalWindow() {
                       {/* Show Stats Panel */}
                       <button
                         onClick={() => setShowStatusBar(prev => !prev)}
-                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive} ${showStatusBar ? (isDarkMode ? 'bg-[#FF79C6] text-black' : 'bg-[#FF45A4] text-black') : (isDarkMode ? 'bg-[#44475a] text-[#8be9fd]' : 'bg-white text-black')}`}
+                        style={{
+                          backgroundColor: showStatusBar ? themeModeSettings.text : themeModeSettings.cardBg,
+                          color: showStatusBar ? themeModeSettings.bg : themeModeSettings.cardText
+                        }}
+                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
                       >
                         <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Show Stats Panel</span>
-                        <div className={`w-5 h-5 border-[3px] border-black flex items-center justify-center font-black text-xs ${showStatusBar ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-transparent'}`}>
+                        <div 
+                          style={{
+                            borderColor: showStatusBar ? themeModeSettings.bg : themeModeSettings.cardText,
+                            backgroundColor: showStatusBar ? themeModeSettings.bg : 'transparent',
+                            color: themeModeSettings.text
+                          }}
+                          className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
+                        >
                           {showStatusBar && "✓"}
                         </div>
                       </button>
@@ -756,11 +877,22 @@ export default function DigitalWindow() {
                       {/* Focus Mode */}
                       <button
                         onClick={() => setFocusMode(prev => !prev)}
-                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive} ${focusMode ? (isDarkMode ? 'bg-[#ff79c6] text-black' : 'bg-[#ff90e8] text-black') : (isDarkMode ? 'bg-[#44475a] text-[#8be9fd]' : 'bg-white text-black')}`}
+                        style={{
+                          backgroundColor: focusMode ? themeModeSettings.text : themeModeSettings.cardBg,
+                          color: focusMode ? themeModeSettings.bg : themeModeSettings.cardText
+                        }}
+                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
                         title="Hides toolbars when typing for distraction-free writing. Hover over top to reveal header."
                       >
                         <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Distraction-Free Mode</span>
-                        <div className={`w-5 h-5 border-[3px] border-black flex items-center justify-center font-black text-xs ${focusMode ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-transparent'}`}>
+                        <div 
+                          style={{
+                            borderColor: focusMode ? themeModeSettings.bg : themeModeSettings.cardText,
+                            backgroundColor: focusMode ? themeModeSettings.bg : 'transparent',
+                            color: themeModeSettings.text
+                          }}
+                          className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
+                        >
                           {focusMode && "✓"}
                         </div>
                       </button>
@@ -768,7 +900,11 @@ export default function DigitalWindow() {
                       {/* Export Note Button */}
                       <button
                         onClick={exportNoteAsTxt}
-                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive} ${isDarkMode ? 'bg-[#50fa7b] text-black' : 'bg-[#00ffd0] text-black'}`}
+                        style={{
+                          backgroundColor: themeModeSettings.cardBg,
+                          color: themeModeSettings.cardText
+                        }}
+                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
                         title="Save current note to device as a TXT file"
                       >
                         <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Export Note (.txt)</span>
@@ -778,17 +914,19 @@ export default function DigitalWindow() {
                       </button>
                     </div>
 
+
+
                     {/* Font Style */}
                     <div className="flex flex-col gap-1.5 mt-2">
                       <span className="text-xs uppercase tracking-wider font-black opacity-85 px-1">Editor Font Style</span>
-                      <div className="grid grid-cols-3 gap-1 border-[3px] border-black p-1 bg-white dark:bg-[#282a36]">
+                      <div className="grid grid-cols-3 gap-1 border-[3px] border-black p-1 bg-white dark:bg-[#121212]">
                         {(['sans', 'mono', 'serif'] as const).map(f => (
                           <button
                             key={f}
                             onClick={() => setFontPreference(f)}
                             className={`py-2 text-xs font-black uppercase border-2 transition-all duration-75 ${
                               fontPreference === f
-                                ? 'bg-black text-white border-black dark:bg-[#50fa7b] dark:text-black dark:border-[#50fa7b]'
+                                ? 'bg-black text-white border-black dark:bg-white dark:text-black dark:border-white'
                                 : 'bg-transparent border-transparent text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'
                             }`}
                           >
@@ -798,101 +936,50 @@ export default function DigitalWindow() {
                       </div>
                     </div>
 
-                    {/* Custom Imported Fonts Manager */}
-                    <div className="flex flex-col gap-2 mt-2 border-t-[3px] border-black/10 dark:border-white/10 pt-2.5">
-                      <div className="flex items-center justify-between px-1">
-                        <span className="text-xs uppercase tracking-wider font-black opacity-85">Custom Google Fonts</span>
-                        {customFonts.length > 0 && (
-                          <span className="text-[10px] font-mono opacity-50 font-bold">{customFonts.length} active</span>
-                        )}
-                      </div>
-
-                      {/* Imported Fonts List */}
-                      {customFonts.length > 0 && (
-                        <div className="flex flex-col gap-1.5 max-h-[140px] overflow-y-auto custom-scrollbar p-1 bg-black/5 dark:bg-white/5 border-[3px] border-black rounded-sm">
-                          {customFonts.map(font => (
-                            <div key={font.id} className="flex items-center justify-between gap-1 bg-white dark:bg-[#282a36] p-1 border-2 border-black/10 dark:border-white/10 rounded-sm">
-                              <button
-                                onClick={() => setFontPreference(`custom-${font.id}`)}
-                                style={{ fontFamily: font.family }}
-                                className={`flex-1 text-left px-2 py-1 text-xs font-black truncate rounded-sm leading-none ${
-                                  fontPreference === `custom-${font.id}`
-                                    ? 'bg-black text-white dark:bg-[#50fa7b] dark:text-black font-extrabold'
-                                    : 'text-black dark:text-white/80 hover:bg-black/5 dark:hover:bg-white/5'
-                                }`}
-                              >
-                                {font.name}
-                              </button>
+                    {/* App Theme */}
+                    <div className="flex flex-col gap-1.5 mt-2 border-t-[3px] border-black/10 dark:border-white/10 pt-2.5">
+                      <span className="text-xs uppercase tracking-wider font-extrabold px-1 opacity-80">App Theme variant</span>
+                      <div className="flex flex-col gap-2 p-1.5 border-[3px] border-black bg-white dark:bg-[#121212]">
+                        {APP_THEMES.map(theme => {
+                          const isSelected = selectedThemeId === theme.id;
+                          const currentSettings = isDarkMode ? theme.dark : theme.light;
+                          
+                          return (
+                            <button
+                              key={theme.id}
+                              type="button"
+                              onClick={() => setSelectedThemeId(theme.id)}
+                              className={`w-full group text-left p-2 border-2 border-black/15 dark:border-white/15 select-none cursor-pointer flex items-center justify-between gap-3 ${funkyTransition} ${
+                                isSelected 
+                                  ? 'bg-black text-white dark:bg-white dark:text-black font-black border-black dark:border-white shadow-[2px_2px_0px_#000] dark:shadow-[2px_2px_0px_#fff]' 
+                                  : 'bg-white text-black dark:bg-[#1c1c1e] dark:text-[#f4f4f5] font-bold hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                {/* Visual Color Swatch */}
+                                <div className="flex items-center -space-x-1 flex-shrink-0">
+                                  <div className="w-4 h-4 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.bg }} title="Page BG" />
+                                  <div className="w-4 h-4 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.sidebarBg }} title="Sidebar" />
+                                  <div className="w-4 h-4 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.cardBg }} title="Card" />
+                                  <div className="w-4 h-4 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.activeNoteBg }} title="Active Note" />
+                                </div>
+                                <span className="text-[11px] uppercase tracking-wider truncate">
+                                  {theme.name}
+                                </span>
+                              </div>
                               
-                              <button
-                                onClick={() => {
-                                  setCustomFonts(prev => prev.filter(f => f.id !== font.id));
-                                  if (fontPreference === `custom-${font.id}`) {
-                                    setFontPreference('sans');
-                                  }
-                                }}
-                                className="p-1 text-red-500 hover:bg-red-500/10 dark:hover:bg-red-500/20 rounded-sm transition-colors"
-                                title="Delete custom font"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Input importation Form */}
-                      <form onSubmit={handleImportFont} className="flex flex-col gap-2 bg-black/5 dark:bg-white/5 p-2.5 border-[3px] border-black rounded-sm">
-                        <input
-                          type="text"
-                          value={importFontName}
-                          onChange={(e) => setImportFontName(e.target.value)}
-                          placeholder="Type any Google Font (e.g. Space Grotesk)"
-                          className="w-full text-xs font-mono p-2 border-2 border-black bg-white text-black dark:bg-[#282a36] dark:text-[#f8f8f2] placeholder:opacity-40 focus:outline-none"
-                        />
-
-                        <button
-                          type="submit"
-                          disabled={!importFontName.trim()}
-                          className={`w-full py-2 font-black uppercase text-xs border-[3px] border-black transition-all ${
-                            importFontName.trim()
-                              ? 'bg-[#FF79C6] text-black hover:bg-[#ff90e8] active:translate-y-[1px] cursor-pointer shadow-[2px_2px_0px_#000]'
-                              : 'bg-black/10 dark:bg-white/10 text-black/40 dark:text-white/40 cursor-not-allowed border-black/20'
-                          }`}
-                        >
-                          Add Font
-                        </button>
-                      </form>
-
-                      {/* Quick preset loader */}
-                      <div className="flex flex-col gap-1.5 px-1 mt-2">
-                        <span className="text-[10px] font-mono uppercase font-black opacity-60">Or choose a preset:</span>
-                        <div className="grid grid-cols-2 gap-2">
-                          {PRESET_FONTS.map(preset => {
-                            const activeFontObj = customFonts.find(f => f.name.toLowerCase() === preset.name.toLowerCase());
-                            const isCurrentlyActive = activeFontObj && fontPreference === `custom-${activeFontObj.id}`;
-                            
-                            return (
-                              <button
-                                key={preset.name}
-                                type="button"
-                                onClick={() => handleImportPreset(preset)}
-                                className={`py-2 px-2.5 text-xs font-black border-[3px] border-black transition-all cursor-pointer rounded-sm shadow-[2px_2px_0px_#000] active:translate-y-[1px] active:shadow-none flex items-center justify-between gap-1 select-none capitalize ${
-                                  isCurrentlyActive 
-                                    ? (isDarkMode ? 'bg-[#50fa7b] text-black' : 'bg-[#FF79C6] text-black')
-                                    : (isDarkMode ? 'bg-[#282a36] text-[#f8f8f2] hover:bg-[#343746]' : 'bg-white text-black hover:bg-neutral-100')
-                                }`}
-                              >
-                                <span className="truncate leading-none">{preset.name}</span>
-                                {isCurrentlyActive ? (
-                                  <Check size={11} className="flex-shrink-0" />
+                              <div className="flex items-center gap-1">
+                                {isSelected ? (
+                                  <div className="flex items-center justify-center w-4 h-4 bg-black text-white dark:bg-white dark:text-black border border-current rounded-full">
+                                    <Check size={8} strokeWidth={3} />
+                                  </div>
                                 ) : (
-                                  <Plus size={11} className="flex-shrink-0" />
+                                  <div className="w-4 h-4 border border-black/20 dark:border-white/20 rounded-full" />
                                 )}
-                              </button>
-                            );
-                          })}
-                        </div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -902,10 +989,13 @@ export default function DigitalWindow() {
 
                 <div className="border-t-[3px] border-black pt-4 flex-shrink-0">
                   <button
-                    onClick={() => setIsSettingsExpanded(false)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsExpanded(false);
+                    }}
                     className={`w-full ${actionBtn} !py-3 bg-black text-white dark:bg-white dark:text-black`}
                   >
-                    BACK TO NOTES
+                    BACK TO MENU
                   </button>
                 </div>
               </motion.div>
@@ -916,13 +1006,16 @@ export default function DigitalWindow() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.15 }}
-                className="flex-1 flex flex-col gap-4 min-h-0 justify-between h-full"
+                className="flex-1 flex flex-col gap-3 sm:gap-4 min-h-0 justify-between"
               >
                 <div className="flex-1 flex flex-col gap-4 min-h-0">
                   <div className="flex justify-between items-center px-1 flex-shrink-0 pb-3 border-b-[3px] border-black/15 dark:border-white/10">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 border-[3px] border-black bg-[#FFE800] flex items-center justify-center font-black rounded-sm flex-shrink-0 shadow-[2px_2px_0px_#000]">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5 stroke-black">
+                      <div 
+                        style={{ backgroundColor: themeModeSettings.cardBg }}
+                        className="w-9 h-9 border-[3px] border-black flex items-center justify-center font-black rounded-sm flex-shrink-0 shadow-[2px_2px_0px_#000]"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5" style={{ stroke: themeModeSettings.text }}>
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                           <polyline points="14 2 14 8 20 8" />
                           <line x1="16" y1="13" x2="8" y2="13" />
@@ -935,11 +1028,13 @@ export default function DigitalWindow() {
                       </div>
                     </div>
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setIsSidebarPinned(false);
                         setIsSidebarHovered(false);
                       }}
-                      className={`p-1.5 border-[3px] border-black ${isDarkMode ? 'bg-[#FF79C6] text-black' : 'bg-[#FF90E8] text-black'} hover:bg-black/5 dark:hover:bg-white/5 transition-colors active:translate-y-[1px] cursor-pointer`}
+                      style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                      className="p-1.5 border-[3px] border-black hover:opacity-90 transition-colors active:translate-y-[1px] cursor-pointer"
                       title="Close Menu"
                     >
                       <MenuIcon size={18} />
@@ -947,7 +1042,8 @@ export default function DigitalWindow() {
                   </div>
                   <button 
                     onClick={createNewNote}
-                    className={`${actionBtn} py-4 text-lg flex-shrink-0 ${isDarkMode ? 'bg-[#FFB86C] text-black' : 'bg-[#B200FF] text-white'}`}
+                    style={{ backgroundColor: themeModeSettings.text, color: themeModeSettings.bg }}
+                    className={`${actionBtn} py-4 text-lg flex-shrink-0`}
                   >
                     <Plus size={24} /> CREATE NEW
                   </button>
@@ -960,17 +1056,13 @@ export default function DigitalWindow() {
                       placeholder="SEARCH NOTES..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className={`w-full pl-10 pr-9 py-2.5 font-mono text-xs font-black uppercase tracking-wider border-[3px] border-black placeholder:text-black/40 dark:placeholder:text-[#f8f8f2]/40 focus:outline-none focus:ring-0 ${
-                        isDarkMode 
-                          ? 'bg-[#282a36] text-[#f8f8f2] focus:bg-[#343746]' 
-                          : 'bg-white text-black focus:bg-amber-50/20'
-                      } transition-colors duration-75`}
+                      style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                      className="w-full pl-10 pr-9 py-2.5 font-mono text-xs font-black uppercase tracking-wider border-[3px] border-black placeholder:text-black/40 dark:placeholder:text-[#F4F4F5]/40 focus:outline-none focus:ring-0 transition-colors duration-75"
                     />
                     <Search 
                       size={14} 
-                      className={`absolute left-3 top-1/2 -translate-y-1/2 font-black ${
-                        isDarkMode ? 'text-[#f8f8f2]/60' : 'text-black/60'
-                      }`} 
+                      style={{ color: themeModeSettings.cardText }}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 font-black opacity-60" 
                     />
                     {searchQuery && (
                       <button
@@ -980,7 +1072,7 @@ export default function DigitalWindow() {
                       >
                         <X 
                           size={14} 
-                          className={isDarkMode ? 'text-[#ff5555]' : 'text-[#ff007f]'} 
+                          className="text-red-500" 
                         />
                       </button>
                     )}
@@ -988,24 +1080,26 @@ export default function DigitalWindow() {
                   
                   <div className="flex-1 overflow-y-auto pb-4 pr-1 pt-1 custom-scrollbar flex flex-col gap-4">
                     {filteredNotes.length === 0 ? (
-                      <div className={`p-6 border-[3px] border-black text-center font-black ${
-                        isDarkMode ? 'bg-[#282a36] text-[#ff5555]' : 'bg-white text-[#ff007f]'
-                      } ${funkyShadow}`}>
+                      <div 
+                        style={{ backgroundColor: themeModeSettings.cardBg, color: '#ef4444' }}
+                        className={`p-6 border-[3px] border-black text-center font-black ${funkyShadow}`}
+                      >
                         <p className="text-sm tracking-wide uppercase">NO NOTES FOUND</p>
                         <p className="text-[10px] opacity-60 font-mono mt-1">TRY ANOTHER QUERY</p>
                       </div>
                     ) : (
                       filteredNotes.map(note => {
                         const isActive = activeNoteId === note.id;
-                        const noteCardBg = isDarkMode 
-                            ? (isActive ? 'bg-[#FF79C6] text-black' : 'bg-[#282a36] text-[#f8f8f2]')
-                            : (isActive ? 'bg-[#FFE800] text-black' : 'bg-white text-black');
+                        const noteCardStyle = isActive 
+                            ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }
+                            : { backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText };
                         
                         return (
                           <div
                             key={note.id}
                             onClick={() => { setActiveNoteId(note.id); }}
-                            className={`text-left px-5 py-5 flex flex-col gap-2 ${funkyTransition} cursor-pointer group ${funkyShadow} ${funkyActive} border-[3px] border-black ${noteCardBg}`}
+                            style={noteCardStyle}
+                            className={`text-left px-5 py-5 flex flex-col gap-2 ${funkyTransition} cursor-pointer group ${funkyShadow} ${funkyActive} border-[3px] border-black`}
                           >
                             <div className="flex justify-between items-start">
                                <span className="font-black truncate text-xl uppercase">{note.title || 'UNTITLED'}</span>
@@ -1014,7 +1108,7 @@ export default function DigitalWindow() {
                                   className="opacity-0 group-hover:opacity-100 hover:scale-110 transition-all duration-75 flex-shrink-0 ml-2"
                                   title="Delete note"
                                >
-                                  <X size={20} className={isDarkMode ? (isActive ? "text-[#FF0000]" : "text-[#FF5555]") : "text-[#FF007F]"} />
+                                  <X size={20} className={isActive ? "text-red-600" : "text-neutral-400 hover:text-red-600"} />
                                </button>
                             </div>
                             <span className="text-sm opacity-80 line-clamp-2 leading-relaxed font-mono whitespace-pre-wrap">{getNotePreviewText(note.content)}</span>
@@ -1027,7 +1121,10 @@ export default function DigitalWindow() {
 
                 <div className="border-t-[3px] border-black pt-4 flex flex-col gap-1.5 flex-shrink-0">
                   <button
-                    onClick={() => setIsSettingsExpanded(true)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsExpanded(true);
+                    }}
                     className="flex justify-between items-center w-full px-4 py-3 font-sans hover:bg-black/5 dark:hover:bg-white/5 transition-colors border-[3px] border-black bg-black/5 dark:bg-white/5 active:translate-y-[1px] active:translate-x-[1px]"
                     title="Open Settings Panel"
                   >
@@ -1056,14 +1153,17 @@ export default function DigitalWindow() {
           }}
           className={`w-full flex flex-row justify-between items-center gap-2 sm:gap-6 font-bold text-sm tracking-wide relative z-20 flex-shrink-0 transition-opacity duration-300 ${focusMode ? 'opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}
         >
-          
-          <div className="flex sm:flex-1 justify-start gap-4 items-center flex-shrink-0">
+            <div className="flex sm:flex-1 justify-start gap-4 items-center flex-shrink-0">
             {!isSidebarOpen && (
               <button
+                style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
-                onClick={() => setIsSidebarPinned(p => !p)}
-                className={`menu-btn ${actionBtn} ${isDarkMode ? 'bg-[#FF79C6] text-black' : 'bg-[#FF90E8] text-black'} ${isSidebarPinned ? 'shadow-none translate-x-[3px] translate-y-[3px]' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSidebarPinned(p => !p);
+                }}
+                className={`menu-btn ${actionBtn} ${isSidebarPinned ? 'shadow-none translate-x-[3px] translate-y-[3px]' : ''}`}
                 title="Menu"
               >
                 <MenuIcon size={20} className="flex-shrink-0" />
@@ -1072,21 +1172,21 @@ export default function DigitalWindow() {
             )}
           </div>
           
-          <div className="hidden sm:flex justify-center flex-shrink-0 min-w-[120px] h-[46px]">
+          <div className="hidden sm:flex justify-center flex-shrink-0 h-[46px]">
             <AnimatePresence>
               {showClock && (
                 <motion.div
                   key="clock-display"
-                  initial={{ opacity: 0, scale: 0.8, y: -10 }}
+                  initial={{ opacity: 0, scale: 0.9, y: -10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.8, y: -10 }}
+                  exit={{ opacity: 0, scale: 0.9, y: -10 }}
                   transition={{ duration: 0.15 }}
-                  className={`flex flex-shrink-0 whitespace-nowrap items-center font-mono text-xl sm:text-2xl font-black px-6 py-2 border-[3px] border-black ${funkyShadow} ${funkyTransition} ${isDarkMode ? 'bg-[#8BE9FD] text-black' : 'bg-[#FFE800] text-black'}`}
+                  style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                  className={`flex flex-shrink-0 items-center font-sans text-base sm:text-lg font-black tracking-widest uppercase tabular-nums px-4.5 border-[3px] border-black rounded-lg shadow-[3px_3px_0px_#000] select-none h-full`}
                 >
-                  {time.toLocaleTimeString([], { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
-                  })}
+                  <span className="tracking-tight uppercase">
+                    {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1101,8 +1201,9 @@ export default function DigitalWindow() {
                   animate={{ opacity: 1, scale: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.8, x: 10 }}
                   transition={{ duration: 0.15 }}
+                  style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
                   onClick={() => editor.chain().focus().undo().run()}
-                  className={`${actionBtn} ${isDarkMode ? 'bg-[#BD93F9] text-[#1e1f29]' : 'bg-[#A8FFB2] text-black'}`}
+                  className={`${actionBtn}`}
                   title="Undo"
                 >
                   <Undo size={18} />
@@ -1118,34 +1219,38 @@ export default function DigitalWindow() {
                   animate={{ opacity: 1, scale: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.8, x: 10 }}
                   transition={{ duration: 0.15 }}
+                  style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
                   onClick={() => editor.chain().focus().redo().run()}
-                  className={`${actionBtn} ${isDarkMode ? 'bg-[#FF79C6] text-black' : 'bg-[#FFC4EB] text-black'}`}
+                  className={`${actionBtn}`}
                   title="Redo"
                 >
                   <Redo size={18} />
                 </motion.button>
               )}
             </AnimatePresence>
-
+ 
             <button
+              style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
               onClick={exportNoteAsTxt}
-              className={`${actionBtn} ${isDarkMode ? 'bg-[#50fa7b] text-black' : 'bg-[#00ffd0] text-black'}`}
+              className={`${actionBtn}`}
               title="Save current note to device as TXT file"
             >
               <Download size={18} />
             </button>
  
             <button
+              style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
               onClick={() => setIsDarkMode(prev => !prev)}
-              className={`${actionBtn} ${isDarkMode ? 'bg-[#F1FA8C] text-black' : 'bg-[#00E5FF] text-black'}`}
+              className={`${actionBtn}`}
               title="Toggle theme"
             >
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
  
             <button
+              style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
               onClick={toggleFullscreen}
-              className={`${actionBtn} sm:flex hidden ${isDarkMode ? 'bg-[#BD93F9] text-[#1e1f29]' : 'bg-[#FF007F] text-black'}`}
+              className={`${actionBtn} sm:flex hidden`}
               title="Toggle fullscreen"
             >
               <Maximize size={18} />
@@ -1154,13 +1259,15 @@ export default function DigitalWindow() {
         </nav>
  
         {/* Main Text Area */}
-        <main className={`flex-1 w-full pb-16 pt-8 z-10 mx-auto overflow-y-auto custom-scrollbar flex flex-col items-center editor-wrap-${fontPreference}`}>
+        <main 
+          className={`flex-1 w-full pb-16 pt-8 z-10 mx-auto overflow-y-auto custom-scrollbar flex flex-col items-center editor-wrap-${fontPreference}`}
+        >
           <div className="w-full max-w-[1600px] px-4 sm:px-12 md:px-20 lg:px-32 xl:px-48 mb-4 flex-shrink-0">
             <input
                value={activeNote.title}
                onChange={(e) => updateActiveNote({ title: e.target.value })}
                placeholder="ENTER TITLE..."
-               className={`title-input-field w-full bg-transparent border-b-[6px] text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black pb-4 pr-2 focus:ring-0 focus:outline-none placeholder:opacity-20 uppercase tracking-tighter ${isDarkMode ? 'border-white text-[#f8f8f2]' : 'border-black text-black'}`}
+               className={`title-input-field w-full bg-transparent border-b-[6px] text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black pb-4 pr-2 focus:ring-0 focus:outline-none placeholder:opacity-20 uppercase tracking-tighter text-inherit border-current`}
                spellCheck={false}
             />
           </div>
@@ -1169,96 +1276,135 @@ export default function DigitalWindow() {
             {editor && (
               <BubbleMenu 
                 editor={editor} 
-                className={`flex gap-1 p-2 rounded-lg shadow-xl z-50 ${isDarkMode ? 'bg-[#282a36] border border-[#6272a4] shadow-black/50' : 'bg-[#F2EDDE] border-2 border-black shadow-black/20'}`}
+                shouldShow={({ state }) => {
+                  if (state.selection && 'node' in state.selection) {
+                    const nodeSel = state.selection as any;
+                    if (nodeSel.node && nodeSel.node.type.name === 'horizontalRule') {
+                      return true;
+                    }
+                  }
+                  return !state.selection.empty;
+                }}
+                style={{
+                  backgroundColor: themeModeSettings.cardBg,
+                  color: themeModeSettings.cardText
+                }}
+                className={`flex gap-1 p-2 rounded-lg z-50 border-[3px] border-black shadow-[4px_4px_0px_#000]`}
               >
-                <button
-                  onClick={() => editor.chain().focus().toggleBold().run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('bold') ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Bold"
-                >
-                  <Bold size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleItalic().run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('italic') ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Italic"
-                >
-                  <Italic size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleUnderline().run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('underline') ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Underline"
-                >
-                  <UnderlineIcon size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleStrike().run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('strike') ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Strikethrough"
-                >
-                  <Strikethrough size={16} />
-                </button>
-                <div className="w-px h-6 bg-black/20 dark:bg-white/20 my-auto mx-1" />
-                <button
-                  onClick={() => editor.chain().focus().setParagraph().run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('paragraph') ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Body text (Paragraph)"
-                >
-                  <Type size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('heading', { level: 1 }) ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Heading 1"
-                >
-                  <Heading1 size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('heading', { level: 2 }) ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Heading 2"
-                >
-                  <Heading2 size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('heading', { level: 3 }) ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Heading 3"
-                >
-                  <Heading3 size={16} />
-                </button>
-                <div className="w-px h-6 bg-black/20 dark:bg-white/20 my-auto mx-1" />
-                <button
-                  onClick={() => editor.chain().focus().toggleBulletList().run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('bulletList') ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Bullet List"
-                >
-                  <List size={16} />
-                </button>
-                <button
-                  onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('orderedList') ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Ordered List"
-                >
-                  <ListOrdered size={16} />
-                </button>
-                <div className="w-px h-6 bg-black/20 dark:bg-white/20 my-auto mx-1" />
-                <button
-                  onClick={() => editor.chain().focus().toggleBlockquote().run()}
-                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10 ${editor.isActive('blockquote') ? 'bg-black/10 dark:bg-white/10' : ''}`}
-                  title="Blockquote"
-                >
-                  <Quote size={16} />
-                </button>
-                <div className="w-px h-6 bg-black/20 dark:bg-white/20 my-auto mx-1" />
-                <button
-                  onClick={() => editor.chain().focus().deleteSelection().run()}
-                  className="p-2 rounded hover:bg-red-500/20 text-red-500 dark:text-red-400"
-                  title="Delete Selection"
-                >
-                  <Trash2 size={16} />
-                </button>
+                {editor.state.selection && 'node' in editor.state.selection && (editor.state.selection as any).node?.type.name === 'horizontalRule' ? (
+                  <button
+                    onClick={() => {
+                      editor.chain().focus().deleteSelection().run();
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded hover:bg-red-500/20 text-red-500 dark:text-red-400 font-extrabold uppercase font-mono text-[11px]"
+                    title="Delete Selected Divider"
+                  >
+                    <Trash2 size={16} />
+                    <span>Delete Selected Divider</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => editor.chain().focus().toggleBold().run()}
+                      style={editor.isActive('bold') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Bold"
+                    >
+                      <Bold size={16} />
+                    </button>
+                    <button
+                      onClick={() => editor.chain().focus().toggleItalic().run()}
+                      style={editor.isActive('italic') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Italic"
+                    >
+                      <Italic size={16} />
+                    </button>
+                    <button
+                      onClick={() => editor.chain().focus().toggleUnderline().run()}
+                      style={editor.isActive('underline') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Underline"
+                    >
+                      <UnderlineIcon size={16} />
+                    </button>
+                    <button
+                      onClick={() => editor.chain().focus().toggleStrike().run()}
+                      style={editor.isActive('strike') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Strikethrough"
+                    >
+                      <Strikethrough size={16} />
+                    </button>
+                    <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
+                    <button
+                      onClick={() => editor.chain().focus().setParagraph().run()}
+                      style={editor.isActive('paragraph') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Body text (Paragraph)"
+                    >
+                      <Type size={16} />
+                    </button>
+                    <button
+                      onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                      style={editor.isActive('heading', { level: 1 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Heading 1"
+                    >
+                      <Heading1 size={16} />
+                    </button>
+                    <button
+                      onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                      style={editor.isActive('heading', { level: 2 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Heading 2"
+                    >
+                      <Heading2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+                      style={editor.isActive('heading', { level: 3 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Heading 3"
+                    >
+                      <Heading3 size={16} />
+                    </button>
+                    <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
+                    <button
+                      onClick={() => editor.chain().focus().toggleBulletList().run()}
+                      style={editor.isActive('bulletList') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Bullet List"
+                    >
+                      <List size={16} />
+                    </button>
+                    <button
+                      onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                      style={editor.isActive('orderedList') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Ordered List"
+                    >
+                      <ListOrdered size={16} />
+                    </button>
+                    <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
+                    <button
+                      onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                      style={editor.isActive('blockquote') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Blockquote"
+                    >
+                      <Quote size={16} />
+                    </button>
+                    <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
+                    <button
+                      onClick={() => editor.chain().focus().deleteSelection().run()}
+                      className="p-2 rounded hover:bg-red-500/20 text-red-500 dark:text-red-400"
+                      title="Delete Selection"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </>
+                )}
               </BubbleMenu>
             )}
             <EditorContent editor={editor} />
@@ -1274,9 +1420,11 @@ export default function DigitalWindow() {
               exit={{ opacity: 0, y: 20 }}
               style={{
                 bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
-                right: 'calc(env(safe-area-inset-right, 0px) + 16px)'
+                right: 'calc(env(safe-area-inset-right, 0px) + 16px)',
+                backgroundColor: themeModeSettings.cardBg,
+                color: themeModeSettings.cardText
               }}
-              className={`fixed z-40 border-[3px] border-black ${funkyShadow} px-4 py-2 font-mono text-xs font-black flex items-center gap-4 ${isDarkMode ? 'bg-[#BD93F9] text-black' : 'bg-white text-black'}`}
+              className={`fixed z-40 border-[3px] border-black ${funkyShadow} px-4 py-2 font-mono text-xs font-black flex items-center gap-4`}
             >
               <span>{words} WORDS</span>
               <div className="w-1 h-3 bg-black/40" />
@@ -1294,18 +1442,18 @@ export default function DigitalWindow() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.95 }}
               transition={{ duration: 0.15, ease: 'easeOut' }}
-              className={`absolute bottom-4 left-4 z-40 border-[3px] border-black ${funkyShadow} px-3 py-1.5 font-mono text-xs font-black flex items-center gap-2.5 ${
-                saveStatus === 'saving'
-                  ? (isDarkMode ? 'bg-[#ffb86c] text-black' : 'bg-[#ffe800] text-black')
-                  : (isDarkMode ? 'bg-[#50fa7b] text-black' : 'bg-[#a8ffb2] text-black')
-              }`}
+              style={{
+                backgroundColor: saveStatus === 'saving' ? (isDarkMode ? '#D97706' : '#FEF3C7') : themeModeSettings.cardBg,
+                color: saveStatus === 'saving' ? (isDarkMode ? '#FFFFFF' : '#1F2937') : themeModeSettings.cardText
+              }}
+              className={`absolute bottom-4 left-4 z-40 border-[3px] border-black ${funkyShadow} px-3 py-1.5 font-mono text-xs font-black flex items-center gap-2.5`}
             >
               <div className="relative flex h-2 w-2 items-center justify-center">
                 {saveStatus === 'saving' && (
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
                 )}
                 <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                  saveStatus === 'saving' ? 'bg-[#ff5555]' : 'bg-[#50fa7b]'
+                  saveStatus === 'saving' ? 'bg-amber-500' : 'bg-emerald-500'
                 }`} />
               </div>
               <span className="uppercase tracking-wider">
@@ -1347,10 +1495,12 @@ export default function DigitalWindow() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.08, ease: "easeOut" }}
-                style={positionStyle}
-                className={`w-[260px] border-[3px] border-black shadow-[4px_4px_0px_#000] font-sans text-xs ${
-                  isDarkMode ? 'bg-[#1e1f29] text-[#f8f8f2]' : 'bg-[#F2EDDE] text-black'
-                } overflow-y-auto custom-scrollbar p-1 flex flex-col`}
+                style={{
+                  ...positionStyle,
+                  backgroundColor: themeModeSettings.sidebarBg,
+                  color: themeModeSettings.text
+                }}
+                className="w-[220px] border-[3px] border-black shadow-[4px_4px_0px_#000] font-sans text-xs overflow-y-auto custom-scrollbar p-1 flex flex-col"
               >
                 {/* Note Quick Control Section */}
                 <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-b-2 border-black/10 dark:border-white/10 mb-1 select-none">
@@ -1362,10 +1512,9 @@ export default function DigitalWindow() {
                     createNewNote();
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#FF79C6] hover:text-black dark:hover:bg-[#FF79C6] border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2"><Plus size={14} /> Create New</span>
-                  <span className="text-[9px] font-mono opacity-50">⌘N</span>
                 </button>
 
                 <button
@@ -1373,198 +1522,22 @@ export default function DigitalWindow() {
                     exportNoteAsTxt();
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#50fa7b] hover:text-black dark:hover:bg-[#50fa7b] border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2"><Download size={14} /> Export (.txt)</span>
-                  <span className="text-[9px] font-mono opacity-50 font-black">⌘S</span>
                 </button>
 
                 <button
                   onClick={() => {
-                    deleteNoteById(activeNoteId);
+                    setNoteToDelete(activeNoteId);
                     setContextMenu(null);
                   }}
                   className="w-full text-left px-2.5 py-1.5 hover:bg-[#ff5555] hover:text-white dark:hover:bg-[#ff5555] border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-[#ff5555] dark:text-[#ff5555] hover:!text-white cursor-pointer"
                 >
                   <span className="flex items-center gap-2"><Trash2 size={14} /> Delete Note</span>
-                  <span className="text-[9px] font-mono opacity-50">⌘⇧⌫</span>
                 </button>
 
-                {/* Typography & Formatting */}
-                {editor && (
-                  <>
-                    <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">
-                      Formatting
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-0.5 px-0.5 mb-1">
-                      <button
-                        disabled={!editor.can().undo()}
-                        onClick={() => {
-                          editor.chain().focus().undo().run();
-                          setContextMenu(null);
-                        }}
-                        className="text-center py-1 bg-black/5 dark:bg-white/5 hover:bg-[#BD93F9] hover:text-black dark:hover:bg-[#BD93F9] border-2 border-transparent hover:border-black font-black uppercase transition-all duration-75 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-inherit disabled:hover:border-transparent cursor-pointer disabled:cursor-not-allowed text-inherit rounded-sm text-[10px]"
-                      >
-                        Undo
-                      </button>
-                      <button
-                        disabled={!editor.can().redo()}
-                        onClick={() => {
-                          editor.chain().focus().redo().run();
-                          setContextMenu(null);
-                        }}
-                        className="text-center py-1 bg-black/5 dark:bg-white/5 hover:bg-[#FF79C6] hover:text-black dark:hover:bg-[#FF79C6] border-2 border-transparent hover:border-black font-black uppercase transition-all duration-75 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-inherit disabled:hover:border-transparent cursor-pointer disabled:cursor-not-allowed text-inherit rounded-sm text-[10px]"
-                      >
-                        Redo
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        editor.chain().focus().toggleBold().run();
-                        setContextMenu(null);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 hover:bg-[#8be9fd] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer ${
-                        editor.isActive('bold') ? 'bg-black/10 dark:bg-white/15' : ''
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Bold size={14} />
-                        <span>Bold</span>
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {editor.isActive('bold') && <Check size={12} />}
-                        <span className="text-[9px] font-mono opacity-50">⌘B</span>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        editor.chain().focus().toggleItalic().run();
-                        setContextMenu(null);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 hover:bg-[#8be9fd] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer ${
-                        editor.isActive('italic') ? 'bg-black/10 dark:bg-white/15' : ''
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Italic size={14} />
-                        <span>Italic</span>
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {editor.isActive('italic') && <Check size={12} />}
-                        <span className="text-[9px] font-mono opacity-50">⌘I</span>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        editor.chain().focus().toggleUnderline().run();
-                        setContextMenu(null);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 hover:bg-[#8be9fd] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer ${
-                        editor.isActive('underline') ? 'bg-black/10 dark:bg-white/15' : ''
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <UnderlineIcon size={14} />
-                        <span>Underline</span>
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {editor.isActive('underline') && <Check size={12} />}
-                        <span className="text-[9px] font-mono opacity-50">⌘U</span>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        editor.chain().focus().toggleStrike().run();
-                        setContextMenu(null);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 hover:bg-[#8be9fd] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer ${
-                        editor.isActive('strike') ? 'bg-black/10 dark:bg-white/15' : ''
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Strikethrough size={14} />
-                        <span>Strikethrough</span>
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {editor.isActive('strike') && <Check size={12} />}
-                        <span className="text-[9px] font-mono opacity-50">⌘⇧X</span>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        toggleBlockquote();
-                        setContextMenu(null);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 hover:bg-[#8be9fd] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer ${
-                        editor.isActive('blockquote') ? 'bg-black/10 dark:bg-white/15' : ''
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Quote size={14} />
-                        <span>Blockquote</span>
-                      </span>
-                      {editor.isActive('blockquote') && <Check size={12} />}
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        clearFormatting();
-                        setContextMenu(null);
-                      }}
-                      className="w-full text-left px-2.5 py-1.5 hover:bg-[#ffb86c] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Eraser size={14} />
-                        <span>Clear Style</span>
-                      </span>
-                      <span className="text-[9px] font-mono opacity-50">Clean</span>
-                    </button>
-                  </>
-                )}
-
-                {/* Selection Transformations Section */}
-                <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">
-                  Selection Rules
-                </div>
-
-                {!selection.hasSelection ? (
-                  <div className="px-3 py-2 text-[10px] font-semibold italic opacity-40 select-none">
-                    Select text to transform cases
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => transformSelectedText('upper')}
-                      className="w-full text-left px-2.5 py-1.5 hover:bg-[#f1fa8c] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2"><span>A → A</span> <span>UPPERCASE</span></span>
-                    </button>
-                    <button
-                      onClick={() => transformSelectedText('lower')}
-                      className="w-full text-left px-2.5 py-1.5 hover:bg-[#f1fa8c] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2"><span>a → a</span> <span>lowercase</span></span>
-                    </button>
-                    <button
-                      onClick={() => transformSelectedText('title')}
-                      className="w-full text-left px-2.5 py-1.5 hover:bg-[#f1fa8c] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2"><span>T → C</span> <span>Title Case</span></span>
-                    </button>
-                    <button
-                      onClick={() => transformSelectedText('sentence')}
-                      className="w-full text-left px-2.5 py-1.5 hover:bg-[#f1fa8c] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2"><span>S → c</span> <span>Sentence Case</span></span>
-                    </button>
-                  </>
-                )}
 
                 {/* Insertion & Snippets Section */}
                 <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">
@@ -1574,62 +1547,22 @@ export default function DigitalWindow() {
                 <button
                   disabled={!editor}
                   onClick={() => insertTimestamp()}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#50fa7b] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
                 >
                   <span className="flex items-center gap-2">
                     <Clock size={14} />
                     <span>Insert Timestamp</span>
                   </span>
-                  <span className="text-[9px] font-mono opacity-40">Date</span>
                 </button>
 
                 <button
                   disabled={!editor}
                   onClick={() => insertHorizontalLine()}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#50fa7b] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
                 >
                   <span className="flex items-center gap-2">
                     <Minus size={14} />
                     <span>Insert Line Rule</span>
-                  </span>
-                  <span className="text-[9px] font-mono opacity-40">---</span>
-                </button>
-
-                {/* Selective Erase & Clean Section */}
-                <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">
-                  Selective Erase
-                </div>
-
-                <button
-                  disabled={!editor}
-                  onClick={removeAllTimestampsInNote}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#ffb86c] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
-                >
-                  <span className="flex items-center gap-2">
-                    <Eraser size={14} className="text-[#ffb86c]" />
-                    <span>Clear Timestamps</span>
-                  </span>
-                </button>
-
-                <button
-                  disabled={!editor}
-                  onClick={removeAllHorizontalLinesInNote}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#8be9fd] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
-                >
-                  <span className="flex items-center gap-2">
-                    <Minus size={14} className="text-[#8be9fd]" />
-                    <span>Clear Dividers</span>
-                  </span>
-                </button>
-
-                <button
-                  disabled={!editor}
-                  onClick={deleteCurrentBlockOrSelection}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#ff5555] hover:text-white border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-[#ff5555] hover:!text-white cursor-pointer disabled:opacity-30"
-                >
-                  <span className="flex items-center gap-2">
-                    <Trash2 size={14} />
-                    <span>Delete Cursor Line</span>
                   </span>
                 </button>
 
@@ -1643,16 +1576,13 @@ export default function DigitalWindow() {
                     setFocusMode(p => !p);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#ffb86c] hover:text-black dark:hover:bg-[#ffb86c] border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     {focusMode ? <Eye size={14} /> : <EyeOff size={14} />} 
                     <span>Focus Mode</span>
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    {focusMode && <Check size={12} />}
-                    <span className="text-[9px] font-mono opacity-50">⌘/</span>
-                  </div>
+                  {focusMode && <Check size={12} />}
                 </button>
 
                 <button
@@ -1660,16 +1590,13 @@ export default function DigitalWindow() {
                     setIsDarkMode(p => !p);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#f1fa8c] hover:text-black dark:hover:bg-[#f1fa8c] border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
                     <span>Dark Mode</span>
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    {isDarkMode && <Check size={12} />}
-                    <span className="text-[9px] font-mono opacity-50">⌘D</span>
-                  </div>
+                  {isDarkMode && <Check size={12} />}
                 </button>
 
                 <button
@@ -1677,16 +1604,13 @@ export default function DigitalWindow() {
                     setShowClock(p => !p);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#8be9fd] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     <Maximize size={14} />
                     <span>Clock Widget</span>
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    {showClock && <Check size={12} />}
-                    <span className="text-[9px] font-mono opacity-50">⌘⇧C</span>
-                  </div>
+                  {showClock && <Check size={12} />}
                 </button>
 
                 <button
@@ -1694,16 +1618,13 @@ export default function DigitalWindow() {
                     setShowStatusBar(p => !p);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#ff79c6] hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     <Info size={14} />
                     <span>Stats Panel</span>
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    {showStatusBar && <Check size={12} />}
-                    <span className="text-[9px] font-mono opacity-50">⌘⇧S</span>
-                  </div>
+                  {showStatusBar && <Check size={12} />}
                 </button>
 
                 {/* Selection Stats Strip (Only visible if there is selected text) */}
@@ -1716,6 +1637,57 @@ export default function DigitalWindow() {
               </motion.div>
             );
           })()}
+        </AnimatePresence>
+
+        {/* Note Deletion Confirmation Modal */}
+        <AnimatePresence>
+          {noteToDelete && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/75 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 font-sans"
+              onClick={() => setNoteToDelete(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 15 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 15 }}
+                style={{ backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.text }}
+                className={`w-full max-w-sm border-[4px] border-black p-6 flex flex-col gap-4 text-center cursor-default shadow-[6px_6px_0px_#000]`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-center text-red-500 mb-1">
+                  <Trash2 size={48} className="stroke-[2.5]" />
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black uppercase tracking-wide leading-tight">
+                  Delete Note?
+                </h3>
+                <p className="text-xs sm:text-sm font-bold opacity-80 leading-relaxed max-w-[280px] mx-auto">
+                  Are you sure you want to permanently delete this note? This action cannot be undone.
+                </p>
+                <div className="flex gap-3 justify-center mt-3">
+                  <button
+                    onClick={() => setNoteToDelete(null)}
+                    className="flex-1 py-2 px-4 uppercase font-black text-xs border-[3px] border-black bg-black/5 hover:bg-black/10 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (noteToDelete) {
+                        deleteNoteById(noteToDelete);
+                        setNoteToDelete(null);
+                      }
+                    }}
+                    className="flex-1 py-2 px-4 uppercase font-black text-xs border-[3px] border-black bg-[#ff5555] text-white hover:bg-red-600 transition-colors shadow-[2px_2px_0px_#000] cursor-pointer"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
     </div>

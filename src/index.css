@@ -155,3 +155,35 @@ html.dark body, html.dark #root {
   font-family: var(--font-serif) !important;
 }
 
+/* Notion-Style Clean Table Redesign */
+.tiptap table {
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  table-layout: fixed;
+  width: 100%;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 4px;
+}
+.tiptap th,
+.tiptap td {
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  padding: 8px 12px;
+  min-width: 50px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+  font-size: 0.95em;
+}
+.tiptap th {
+  font-weight: 600;
+  text-align: left;
+  background-color: rgba(128, 128, 128, 0.05);
+}
+.tiptap td p, .tiptap th p {
+  margin: 0;
+}
+/* Selected cell styling within Tiptap/ProseMirror */
+.tiptap .selectedCell {
+  background-color: rgba(128, 128, 128, 0.08) !important;
+}
+

@@ -56,13 +56,13 @@ const APP_THEMES: AppTheme[] = [
     id: 'default',
     name: 'Classic Slate',
     light: {
-      bg: '#F5F4F0',
-      sidebarBg: '#EFECE6',
-      text: '#000000',
+      bg: '#F8F9FA',
+      sidebarBg: '#F1F3F5',
+      text: '#121314',
       cardBg: '#FFFFFF',
-      cardText: '#000000',
-      activeNoteBg: '#EADECE',
-      activeNoteText: '#000000'
+      cardText: '#121314',
+      activeNoteBg: '#E2E8F0',
+      activeNoteText: '#121314'
     },
     dark: {
       bg: '#121212',
@@ -70,8 +70,8 @@ const APP_THEMES: AppTheme[] = [
       text: '#F4F4F5',
       cardBg: '#1C1C1E',
       cardText: '#F4F4F5',
-      activeNoteBg: '#EADECE',
-      activeNoteText: '#000000'
+      activeNoteBg: '#2D2F34',
+      activeNoteText: '#F4F4F5'
     }
   },
   {
@@ -245,6 +245,12 @@ export default function DigitalWindow() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
   const contextMenuRef = React.useRef<HTMLDivElement>(null);
+
+  const editorRelativeContainerRef = React.useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    // Left empty since we removed the table cell/table resetting
+  }, [activeNoteId]);
 
   const getStats = () => {
     if (!activeNote || !activeNote.content) return { words: 0, chars: 0 };
@@ -450,6 +456,8 @@ export default function DigitalWindow() {
       editor.commands.setContent(activeNote.content);
     }
   }, [activeNoteId, editor]);
+
+  // Empty placeholder for table effects (removed and streamlined)
 
   // Automatically clean up untitled or unfilled notes that are not active anymore
   useEffect(() => {
@@ -760,13 +768,118 @@ export default function DigitalWindow() {
     <div 
       onContextMenu={handleContextMenu}
       style={{ 
-        backgroundImage: isDarkMode ? 'radial-gradient(#ffffff08 3px, transparent 3px)' : 'radial-gradient(#00000008 3px, transparent 3px)', 
+        backgroundImage: `radial-gradient(${themeModeSettings.text}10 3px, transparent 3px)`, 
         backgroundSize: '32px 32px',
         backgroundColor: themeModeSettings.bg,
         color: themeModeSettings.text
       }}
       className={`relative w-full h-screen h-[100dvh] flex flex-row font-sans overflow-hidden transition-colors duration-200`}
     >
+      <style>{`
+        /* Dynamic Theme Palette Override Stylesheet */
+        
+        /* 1. Force retro elements to use active theme's matching text color with low opacity, creating softer lines */
+        .border-black,
+        .border-r-black,
+        .border-b-black,
+        .border-t-black,
+        .border-current,
+        .border-\\[3px\\],
+        .border-\\[4px\\],
+        .border-\\[2\\.5px\\] {
+          border-color: ${themeModeSettings.text}55 !important; /* Soft, themed border accent */
+        }
+
+        .border-black\\/15 {
+          border-color: ${themeModeSettings.text}22 !important;
+        }
+        
+        .border-black\\/10 {
+          border-color: ${themeModeSettings.text}18 !important;
+        }
+
+        /* 2. Soft translucent shadows for retro components, cards, buttons, avoiding harsh solid dark/light */
+        .shadow-\\[8px_0px_0px_\\#000\\],
+        .shadow-\\[8px_0px_0px_#000\\] {
+          box-shadow: 8px 0px 0px ${themeModeSettings.text}26 !important; /* ~15% opacity current theme text color shadow */
+        }
+        
+        .shadow-\\[6px_6px_0px_\\#000\\],
+        .shadow-\\[6px_6px_0px_\\#fff\\],
+        .shadow-\\[6px_6px_0px_#000\\] {
+          box-shadow: 6px 6px 0px ${themeModeSettings.text}26 !important;
+        }
+        
+        .shadow-\\[4px_4px_0px_\\#000\\],
+        .shadow-\\[4px_4px_0px_\\#fff\\],
+        .shadow-\\[4px_4px_0px_#000\\] {
+          box-shadow: 4px 4px 0px ${themeModeSettings.text}22 !important;
+        }
+        
+        .shadow-\\[3px_3px_0px_\\#000\\],
+        .shadow-\\[3px_3px_0px_\\#fff\\],
+        .shadow-\\[3px_3px_0px_#000\\] {
+          box-shadow: 3px 3px 0px ${themeModeSettings.text}22 !important;
+        }
+        
+        .shadow-\\[2px_2px_0px_\\#000\\],
+        .shadow-\\[2px_2px_0px_\\#fff\\],
+        .shadow-\\[2px_2px_0px_#000\\] {
+          box-shadow: 2px 2px 0px ${themeModeSettings.text}1a !important;
+        }
+
+        /* Hover shadow adjustments */
+        .hover\\:shadow-\\[3px_3px_0px_\\#000\\]:hover {
+          box-shadow: 3px 3px 0px ${themeModeSettings.text}33 !important;
+        }
+
+        /* 3. Button Hover behavior: uses the active theme highlight accent */
+        .menu-btn:hover {
+          background-color: ${themeModeSettings.activeNoteBg} !important;
+          color: ${themeModeSettings.activeNoteText} !important;
+        }
+        
+        /* 5. Custom scrollbar track/thumb thematic integration */
+        ::-webkit-scrollbar-track {
+          border-left: 1px solid ${themeModeSettings.text}1c !important;
+          background: transparent !important;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: ${themeModeSettings.text}2b !important; /* ~17% opacity themed thumb */
+          border-left: 1px solid ${themeModeSettings.text}1c !important;
+        }
+        
+        /* 6. Settings Panel specifics */
+        .bg-black\\/5 {
+          background-color: ${themeModeSettings.text}0d !important; /* ~5% opacity */
+        }
+        .hover\\:bg-black\\/5:hover {
+          background-color: ${themeModeSettings.text}1a !important; /* ~10% opacity */
+        }
+        
+        /* Selection stats panel line divider */
+        .bg-black\\/40 {
+          background-color: ${themeModeSettings.text}40 !important; /* 25% opacity */
+        }
+
+        /* 7. Input/Placeholder thematic consistency */
+        input::placeholder,
+        textarea::placeholder {
+          color: ${themeModeSettings.text} !important;
+          opacity: 0.25 !important;
+        }
+        
+        /* Inactive items opacity */
+        .opacity-50 {
+          opacity: 0.65 !important;
+        }
+        
+        /* Font buttons alignment */
+        .text-black\\/60 {
+          color: ${themeModeSettings.text}99 !important;
+        }
+
+      `}</style>
 
       {/* Sidebar Overlay on Mobile/Tablet */}
       <AnimatePresence>
@@ -790,7 +903,7 @@ export default function DigitalWindow() {
         animate={{ 
           width: isSidebarOpen ? "min(100vw, 384px)" : "0px",
           borderRightWidth: isSidebarOpen ? 3 : 0,
-          boxShadow: isSidebarOpen ? "8px 0px 0px #000" : "0px 0px 0px #000"
+          boxShadow: isSidebarOpen ? `8px 0px 0px ${themeModeSettings.text}` : `0px 0px 0px ${themeModeSettings.text}`
         }}
         style={{
           backgroundColor: themeModeSettings.sidebarBg,
@@ -834,17 +947,17 @@ export default function DigitalWindow() {
                       <button
                         onClick={() => setShowClock(prev => !prev)}
                         style={{
-                          backgroundColor: showClock ? themeModeSettings.text : themeModeSettings.cardBg,
-                          color: showClock ? themeModeSettings.bg : themeModeSettings.cardText
+                          backgroundColor: showClock ? themeModeSettings.activeNoteBg : themeModeSettings.cardBg,
+                          color: showClock ? themeModeSettings.activeNoteText : themeModeSettings.cardText
                         }}
                         className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
                       >
                         <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Show Clock</span>
                         <div 
                           style={{
-                            borderColor: showClock ? themeModeSettings.bg : themeModeSettings.cardText,
-                            backgroundColor: showClock ? themeModeSettings.bg : 'transparent',
-                            color: themeModeSettings.text
+                            borderColor: showClock ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                            backgroundColor: showClock ? themeModeSettings.activeNoteText : 'transparent',
+                            color: themeModeSettings.activeNoteBg
                           }}
                           className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
                         >
@@ -856,17 +969,17 @@ export default function DigitalWindow() {
                       <button
                         onClick={() => setShowStatusBar(prev => !prev)}
                         style={{
-                          backgroundColor: showStatusBar ? themeModeSettings.text : themeModeSettings.cardBg,
-                          color: showStatusBar ? themeModeSettings.bg : themeModeSettings.cardText
+                          backgroundColor: showStatusBar ? themeModeSettings.activeNoteBg : themeModeSettings.cardBg,
+                          color: showStatusBar ? themeModeSettings.activeNoteText : themeModeSettings.cardText
                         }}
                         className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
                       >
                         <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Show Stats Panel</span>
                         <div 
                           style={{
-                            borderColor: showStatusBar ? themeModeSettings.bg : themeModeSettings.cardText,
-                            backgroundColor: showStatusBar ? themeModeSettings.bg : 'transparent',
-                            color: themeModeSettings.text
+                            borderColor: showStatusBar ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                            backgroundColor: showStatusBar ? themeModeSettings.activeNoteText : 'transparent',
+                            color: themeModeSettings.activeNoteBg
                           }}
                           className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
                         >
@@ -878,8 +991,8 @@ export default function DigitalWindow() {
                       <button
                         onClick={() => setFocusMode(prev => !prev)}
                         style={{
-                          backgroundColor: focusMode ? themeModeSettings.text : themeModeSettings.cardBg,
-                          color: focusMode ? themeModeSettings.bg : themeModeSettings.cardText
+                          backgroundColor: focusMode ? themeModeSettings.activeNoteBg : themeModeSettings.cardBg,
+                          color: focusMode ? themeModeSettings.activeNoteText : themeModeSettings.cardText
                         }}
                         className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
                         title="Hides toolbars when typing for distraction-free writing. Hover over top to reveal header."
@@ -887,9 +1000,9 @@ export default function DigitalWindow() {
                         <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Distraction-Free Mode</span>
                         <div 
                           style={{
-                            borderColor: focusMode ? themeModeSettings.bg : themeModeSettings.cardText,
-                            backgroundColor: focusMode ? themeModeSettings.bg : 'transparent',
-                            color: themeModeSettings.text
+                            borderColor: focusMode ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                            backgroundColor: focusMode ? themeModeSettings.activeNoteText : 'transparent',
+                            color: themeModeSettings.activeNoteBg
                           }}
                           className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
                         >
@@ -901,8 +1014,8 @@ export default function DigitalWindow() {
                       <button
                         onClick={exportNoteAsTxt}
                         style={{
-                          backgroundColor: themeModeSettings.cardBg,
-                          color: themeModeSettings.cardText
+                          backgroundColor: themeModeSettings.activeNoteBg,
+                          color: themeModeSettings.activeNoteText
                         }}
                         className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
                         title="Save current note to device as a TXT file"
@@ -919,15 +1032,24 @@ export default function DigitalWindow() {
                     {/* Font Style */}
                     <div className="flex flex-col gap-1.5 mt-2">
                       <span className="text-xs uppercase tracking-wider font-black opacity-85 px-1">Editor Font Style</span>
-                      <div className="grid grid-cols-3 gap-1 border-[3px] border-black p-1 bg-white dark:bg-[#121212]">
+                      <div style={{ backgroundColor: themeModeSettings.cardBg }} className="grid grid-cols-3 gap-1 border-[3px] border-black p-1">
                         {(['sans', 'mono', 'serif'] as const).map(f => (
                           <button
                             key={f}
                             onClick={() => setFontPreference(f)}
+                            style={fontPreference === f ? {
+                              backgroundColor: themeModeSettings.activeNoteBg,
+                              color: themeModeSettings.activeNoteText,
+                              borderColor: themeModeSettings.activeNoteBg
+                            } : {
+                              backgroundColor: themeModeSettings.sidebarBg,
+                              color: themeModeSettings.cardText,
+                              borderColor: "transparent"
+                            }}
                             className={`py-2 text-xs font-black uppercase border-2 transition-all duration-75 ${
                               fontPreference === f
-                                ? 'bg-black text-white border-black dark:bg-white dark:text-black dark:border-white'
-                                : 'bg-transparent border-transparent text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'
+                                ? ''
+                                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'
                             }`}
                           >
                             {f}
@@ -939,7 +1061,7 @@ export default function DigitalWindow() {
                     {/* App Theme */}
                     <div className="flex flex-col gap-1.5 mt-2 border-t-[3px] border-black/10 dark:border-white/10 pt-2.5">
                       <span className="text-xs uppercase tracking-wider font-extrabold px-1 opacity-80">App Theme variant</span>
-                      <div className="flex flex-col gap-2 p-1.5 border-[3px] border-black bg-white dark:bg-[#121212]">
+                      <div style={{ backgroundColor: themeModeSettings.cardBg }} className="flex flex-col gap-2 p-1.5 border-[3px] border-black">
                         {APP_THEMES.map(theme => {
                           const isSelected = selectedThemeId === theme.id;
                           const currentSettings = isDarkMode ? theme.dark : theme.light;
@@ -949,10 +1071,19 @@ export default function DigitalWindow() {
                               key={theme.id}
                               type="button"
                               onClick={() => setSelectedThemeId(theme.id)}
-                              className={`w-full group text-left p-2 border-2 border-black/15 dark:border-white/15 select-none cursor-pointer flex items-center justify-between gap-3 ${funkyTransition} ${
+                              style={isSelected ? {
+                                backgroundColor: themeModeSettings.activeNoteBg,
+                                color: themeModeSettings.activeNoteText,
+                                borderColor: themeModeSettings.activeNoteBg
+                              } : {
+                                backgroundColor: themeModeSettings.sidebarBg,
+                                color: themeModeSettings.cardText,
+                                borderColor: "transparent"
+                              }}
+                              className={`w-full group text-left p-2 border-2 select-none cursor-pointer flex items-center justify-between gap-3 ${funkyTransition} ${
                                 isSelected 
-                                  ? 'bg-black text-white dark:bg-white dark:text-black font-black border-black dark:border-white shadow-[2px_2px_0px_#000] dark:shadow-[2px_2px_0px_#fff]' 
-                                  : 'bg-white text-black dark:bg-[#1c1c1e] dark:text-[#f4f4f5] font-bold hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                                  ? 'font-black shadow-[2px_2px_0px_#000]' 
+                                  : 'font-bold hover:opacity-90'
                               }`}
                             >
                               <div className="flex items-center gap-2 min-w-0">
@@ -970,7 +1101,10 @@ export default function DigitalWindow() {
                               
                               <div className="flex items-center gap-1">
                                 {isSelected ? (
-                                  <div className="flex items-center justify-center w-4 h-4 bg-black text-white dark:bg-white dark:text-black border border-current rounded-full">
+                                  <div 
+                                    style={{ backgroundColor: themeModeSettings.bg, color: themeModeSettings.text }}
+                                    className="flex items-center justify-center w-4 h-4 border border-current rounded-full"
+                                  >
                                     <Check size={8} strokeWidth={3} />
                                   </div>
                                 ) : (
@@ -993,7 +1127,8 @@ export default function DigitalWindow() {
                       e.stopPropagation();
                       setIsSettingsExpanded(false);
                     }}
-                    className={`w-full ${actionBtn} !py-3 bg-black text-white dark:bg-white dark:text-black`}
+                    style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
+                    className={`w-full ${actionBtn} !py-3`}
                   >
                     BACK TO MENU
                   </button>
@@ -1042,7 +1177,7 @@ export default function DigitalWindow() {
                   </div>
                   <button 
                     onClick={createNewNote}
-                    style={{ backgroundColor: themeModeSettings.text, color: themeModeSettings.bg }}
+                    style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
                     className={`${actionBtn} py-4 text-lg flex-shrink-0`}
                   >
                     <Plus size={24} /> CREATE NEW
@@ -1156,7 +1291,7 @@ export default function DigitalWindow() {
             <div className="flex sm:flex-1 justify-start gap-4 items-center flex-shrink-0">
             {!isSidebarOpen && (
               <button
-                style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
                 onClick={(e) => {
@@ -1181,7 +1316,7 @@ export default function DigitalWindow() {
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: -10 }}
                   transition={{ duration: 0.15 }}
-                  style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                  style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
                   className={`flex flex-shrink-0 items-center font-sans text-base sm:text-lg font-black tracking-widest uppercase tabular-nums px-4.5 border-[3px] border-black rounded-lg shadow-[3px_3px_0px_#000] select-none h-full`}
                 >
                   <span className="tracking-tight uppercase">
@@ -1201,7 +1336,7 @@ export default function DigitalWindow() {
                   animate={{ opacity: 1, scale: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.8, x: 10 }}
                   transition={{ duration: 0.15 }}
-                  style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                  style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
                   onClick={() => editor.chain().focus().undo().run()}
                   className={`${actionBtn}`}
                   title="Undo"
@@ -1219,7 +1354,7 @@ export default function DigitalWindow() {
                   animate={{ opacity: 1, scale: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.8, x: 10 }}
                   transition={{ duration: 0.15 }}
-                  style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                  style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
                   onClick={() => editor.chain().focus().redo().run()}
                   className={`${actionBtn}`}
                   title="Redo"
@@ -1230,7 +1365,7 @@ export default function DigitalWindow() {
             </AnimatePresence>
  
             <button
-              style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+              style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
               onClick={exportNoteAsTxt}
               className={`${actionBtn}`}
               title="Save current note to device as TXT file"
@@ -1239,7 +1374,7 @@ export default function DigitalWindow() {
             </button>
  
             <button
-              style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+              style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
               onClick={() => setIsDarkMode(prev => !prev)}
               className={`${actionBtn}`}
               title="Toggle theme"
@@ -1248,7 +1383,7 @@ export default function DigitalWindow() {
             </button>
  
             <button
-              style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+              style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
               onClick={toggleFullscreen}
               className={`${actionBtn} sm:flex hidden`}
               title="Toggle fullscreen"
@@ -1272,7 +1407,7 @@ export default function DigitalWindow() {
             />
           </div>
 
-          <div className="w-full max-w-[1600px] flex-1 flex-shrink-0 relative">
+          <div ref={editorRelativeContainerRef} className="w-full max-w-[1600px] flex-1 flex-shrink-0 relative">
             {editor && (
               <BubbleMenu 
                 editor={editor} 
@@ -1604,6 +1739,8 @@ export default function DigitalWindow() {
                     <span>Insert Line Rule</span>
                   </span>
                 </button>
+
+
 
                 {/* Appearance Section */}
                 <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-t-2 border-b-2 border-black/10 dark:border-white/10 my-1 select-none">

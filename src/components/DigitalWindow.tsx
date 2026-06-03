@@ -181,7 +181,7 @@ export default function DigitalWindow() {
     return [{ 
       id: Date.now().toString(), 
       title: 'welcome', 
-      content: '<h2>welcome to digital window.</h2><p>this is a quiet, distraction-free writing environment built for your thoughts, ideas, and drafts.</p><p>everything you compose here is auto-saved locally to your browser. no server sync, no accounts, and zero trackers. your work remains yours alone.</p><p><strong>key features to explore:</strong></p><ul><li><strong>note management:</strong> create, search, and delete documents inside the retractable sidebar (hover or click menu).</li><li><strong>distraction-free:</strong> toggle focus mode in settings to auto-hide headers and toolbars when typing.</li><li><strong>typography:</strong> choose between clean sans-serif, typewriter mono, or classic serif editor fonts.</li><li><strong>exports:</strong> save and download your documents locally as clean `.txt` files with one click.</li></ul><p></p><p><em>clear your mind and enjoy the quiet writing experience.</em></p>', 
+      content: '<h2>welcome.</h2><p>this is a quiet space to clear your mind and serialize your thoughts.</p><p>everything is stored locally in your browser. start typing below.</p>', 
       updatedAt: Date.now() 
     }];
   });

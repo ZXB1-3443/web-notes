@@ -248,10 +248,6 @@ export default function DigitalWindow() {
 
   const editorRelativeContainerRef = React.useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    // Left empty since we removed the table cell/table resetting
-  }, [activeNoteId]);
-
   const getStats = () => {
     if (!activeNote || !activeNote.content) return { words: 0, chars: 0 };
     const rawText = activeNote.content.replace(/<[^>]+>/g, ' ').trim();
@@ -456,8 +452,6 @@ export default function DigitalWindow() {
       editor.commands.setContent(activeNote.content);
     }
   }, [activeNoteId, editor]);
-
-  // Empty placeholder for table effects (removed and streamlined)
 
   // Automatically clean up untitled or unfilled notes that are not active anymore
   useEffect(() => {

@@ -1159,7 +1159,6 @@ export default function DigitalWindow() {
                       </div>
                       <div className="flex flex-col">
                         <span className="text-[17px] font-black tracking-wider uppercase leading-none">WEB NOTES</span>
-                        <span className="text-[8px] font-mono font-bold uppercase opacity-55 tracking-wider mt-0.5">Workspace</span>
                       </div>
                     </div>
                     <button

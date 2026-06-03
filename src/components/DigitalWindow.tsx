@@ -171,7 +171,18 @@ export default function DigitalWindow() {
     const saved = localStorage.getItem('digital_window_all_notes');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && parsed.length > 0) return parsed;
+      if (parsed && parsed.length > 0) {
+        // Real-time migration to remove duplicate 'welcome.' heading inside the body of existing welcome notes
+        return parsed.map((note: Note) => {
+          if (note.title.toLowerCase() === 'welcome' && note.content.startsWith('<h2>welcome.</h2>')) {
+            return {
+              ...note,
+              content: note.content.replace('<h2>welcome.</h2>', '')
+            };
+          }
+          return note;
+        });
+      }
     }
     
     const oldNotes = localStorage.getItem('digital_window_notes');
@@ -180,8 +191,8 @@ export default function DigitalWindow() {
     }
     return [{ 
       id: Date.now().toString(), 
-      title: 'welcome', 
-      content: '<h2>welcome.</h2><p>this is a quiet space to clear your mind and serialize your thoughts.</p><p>everything is stored locally in your browser. start typing below.</p>', 
+      title: 'Welcome', 
+      content: '<p>A calm, distraction-free environment designed to catch your thoughts, assemble your ideas, or simply write to the void.</p><p>Everything you compose here remains entirely local to your device—no cloud, no trackers, and no noise. Just you and the blinking cursor.</p><p><em>Where do we begin?</em></p>', 
       updatedAt: Date.now() 
     }];
   });

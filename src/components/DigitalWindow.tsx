@@ -6,6 +6,7 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
+import { playKeySound } from '../utils/keyboardAudio';
 
 type Note = {
   id: string;
@@ -54,24 +55,24 @@ export type AppTheme = {
 const APP_THEMES: AppTheme[] = [
   {
     id: 'default',
-    name: 'Classic Slate',
+    name: 'Standard',
     light: {
-      bg: '#F8F9FA',
-      sidebarBg: '#F1F3F5',
-      text: '#121314',
+      bg: '#F5F5F7',
+      sidebarBg: '#EFECE3',
+      text: '#111111',
       cardBg: '#FFFFFF',
-      cardText: '#121314',
-      activeNoteBg: '#E2E8F0',
-      activeNoteText: '#121314'
+      cardText: '#111111',
+      activeNoteBg: '#D4D4D8',
+      activeNoteText: '#111111'
     },
     dark: {
-      bg: '#121212',
-      sidebarBg: '#18181B',
-      text: '#F4F4F5',
-      cardBg: '#1C1C1E',
-      cardText: '#F4F4F5',
-      activeNoteBg: '#2D2F34',
-      activeNoteText: '#F4F4F5'
+      bg: '#0F0F11',
+      sidebarBg: '#1A1A1E',
+      text: '#F5F5F7',
+      cardBg: '#1F1F24',
+      cardText: '#F5F5F7',
+      activeNoteBg: '#4B5563',
+      activeNoteText: '#FFFFFF'
     }
   },
   {
@@ -247,6 +248,29 @@ export default function DigitalWindow() {
       setIsSettingsExpanded(false);
     }
   }, [isSidebarOpen]);
+
+  const [keySoundsEnabled, setKeySoundsEnabled] = useState(() => {
+    const saved = localStorage.getItem('digital_window_key_sounds');
+    return saved !== 'false';
+  });
+
+  const [keySoundProfile, setKeySoundProfile] = useState<'thocky' | 'mechanical'>(() => {
+    const saved = localStorage.getItem('digital_window_key_sound_profile');
+    return (saved || 'thocky') as 'thocky' | 'mechanical';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('digital_window_key_sounds', String(keySoundsEnabled));
+    keySoundsEnabledRef.current = keySoundsEnabled;
+  }, [keySoundsEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('digital_window_key_sound_profile', keySoundProfile);
+    keySoundProfileRef.current = keySoundProfile;
+  }, [keySoundProfile]);
+
+  const keySoundsEnabledRef = React.useRef(keySoundsEnabled);
+  const keySoundProfileRef = React.useRef(keySoundProfile);
 
   const [focusMode, setFocusMode] = useState(() => {
     return localStorage.getItem('digital_window_focus') === 'true';
@@ -454,6 +478,14 @@ export default function DigitalWindow() {
         class: `tiptap w-full min-h-[50vh] bg-transparent border-0 px-4 sm:px-12 md:px-20 lg:px-32 xl:px-48 text-xl sm:text-2xl md:text-3xl font-mono leading-relaxed placeholder:opacity-30 focus:ring-0 focus:outline-none z-10 relative overflow-hidden text-inherit`,
         spellcheck: "true",
       },
+      handleDOMEvents: {
+        keydown: (view, event) => {
+          if (keySoundsEnabledRef.current) {
+            playKeySound(event.key, keySoundProfileRef.current);
+          }
+          return false;
+        }
+      }
     },
   });
 
@@ -1015,6 +1047,64 @@ export default function DigitalWindow() {
                         </div>
                       </button>
 
+                      {/* Keyboard Press Sounds */}
+                      <div className="flex flex-col gap-1 w-full">
+                        <button
+                          onClick={() => setKeySoundsEnabled(prev => !prev)}
+                          style={{
+                            backgroundColor: keySoundsEnabled ? themeModeSettings.activeNoteBg : themeModeSettings.cardBg,
+                            color: keySoundsEnabled ? themeModeSettings.activeNoteText : themeModeSettings.cardText
+                          }}
+                          className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
+                          title="Play satisfying mechanical keyboard click sounds as you type"
+                        >
+                          <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Typing Sound</span>
+                          <div 
+                            style={{
+                              borderColor: keySoundsEnabled ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                              backgroundColor: keySoundsEnabled ? themeModeSettings.activeNoteText : 'transparent',
+                              color: themeModeSettings.activeNoteBg
+                            }}
+                            className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
+                          >
+                            {keySoundsEnabled && "✓"}
+                          </div>
+                        </button>
+
+                        {/* Sound Profile Selectors */}
+                        {keySoundsEnabled && (
+                          <div 
+                            style={{ backgroundColor: themeModeSettings.cardBg }} 
+                            className="grid grid-cols-2 gap-1 border-[3px] border-black p-1 w-[92%] mx-auto mt-0.5"
+                          >
+                            <button
+                              onClick={() => setKeySoundProfile('thocky')}
+                              style={
+                                keySoundProfile === 'thocky'
+                                  ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
+                                  : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
+                              }
+                              className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 ${funkyTransition}`}
+                              title="Play soft, creamy, dampened mechanical thocks"
+                            >
+                              Soft Thocky
+                            </button>
+                            <button
+                              onClick={() => setKeySoundProfile('mechanical')}
+                              style={
+                                keySoundProfile === 'mechanical'
+                                  ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
+                                  : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
+                              }
+                              className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 ${funkyTransition}`}
+                              title="Play crisp, clacky switches with distinct metallic resonance"
+                            >
+                              Mechanical
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Export Note Button */}
                       <button
                         onClick={exportNoteAsTxt}
@@ -1195,6 +1285,11 @@ export default function DigitalWindow() {
                       placeholder="SEARCH NOTES..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (keySoundsEnabledRef.current) {
+                          playKeySound(e.key, keySoundProfileRef.current);
+                        }
+                      }}
                       style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
                       className="w-full pl-10 pr-9 py-2.5 font-mono text-xs font-black uppercase tracking-wider border-[3px] border-black placeholder:text-black/40 dark:placeholder:text-[#F4F4F5]/40 focus:outline-none focus:ring-0 transition-colors duration-75"
                     />
@@ -1405,6 +1500,11 @@ export default function DigitalWindow() {
             <input
                value={activeNote.title}
                onChange={(e) => updateActiveNote({ title: e.target.value })}
+               onKeyDown={(e) => {
+                 if (keySoundsEnabledRef.current) {
+                   playKeySound(e.key, keySoundProfileRef.current);
+                 }
+               }}
                placeholder="ENTER TITLE..."
                className={`title-input-field w-full bg-transparent border-b-[6px] text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black pb-4 pr-2 focus:ring-0 focus:outline-none placeholder:opacity-20 uppercase tracking-tighter text-inherit border-current`}
                spellCheck={false}

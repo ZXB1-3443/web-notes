@@ -7,6 +7,9 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 import { playKeySound } from '../utils/keyboardAudio';
+import { auth, db, googleProvider, OperationType, handleFirestoreError } from '../utils/firebase';
+import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { doc, setDoc, deleteDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
 
 type Note = {
   id: string;
@@ -168,6 +171,14 @@ const APP_THEMES: AppTheme[] = [
 
 
 export default function DigitalWindow() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [useLocalSession, setUseLocalSession] = useState(() => {
+    return sessionStorage.getItem('digital_window_offline_session') === 'true';
+  });
+  const [firestoreNotesLoaded, setFirestoreNotesLoaded] = useState(false);
+  const cloudSaveTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [notesList, setNotesList] = useState<Note[]>(() => {
     const saved = localStorage.getItem('digital_window_all_notes');
     if (saved) {
@@ -199,11 +210,27 @@ export default function DigitalWindow() {
   });
   
   const [activeNoteId, setActiveNoteId] = useState<string>(() => notesList[0]?.id || '');
-  const activeNote = notesList.find(n => n.id === activeNoteId) || notesList[0];
+  const activeNote = notesList.find(n => n.id === activeNoteId) || notesList[0] || {
+    id: 'placeholder',
+    title: 'UNTITLED',
+    content: '',
+    updatedAt: Date.now()
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarPinned, setIsSidebarPinned] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'display' | 'themes' | 'cloud'>('display');
   const isSidebarOpen = isSidebarPinned || isSidebarHovered;
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('digital_window_theme') === 'dark');
 
@@ -249,6 +276,29 @@ export default function DigitalWindow() {
     }
   }, [isSidebarOpen]);
 
+  // Synchronize HTML/Body Background color and Theme Color Meta tag dynamically for native safe areas (notches/devices status bars)
+  useEffect(() => {
+    let activeBg = isDarkMode ? '#0F0F11' : '#F5F5F7';
+    if (authLoading) {
+      activeBg = isDarkMode ? '#0F0F11' : '#F4F4F5';
+    } else if (user || useLocalSession) {
+      activeBg = themeModeSettings.bg;
+    }
+
+    // Set fallback body/html styles to prevent screen flash or mismatched native bouncing borders
+    document.documentElement.style.backgroundColor = activeBg;
+    document.body.style.backgroundColor = activeBg;
+
+    // Synchronize webapp theme-color meta tag for dynamic chrome integration on iOS/Android
+    let metaTag = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement;
+    if (!metaTag) {
+      metaTag = document.createElement('meta');
+      metaTag.name = 'theme-color';
+      document.getElementsByTagName('head')[0].appendChild(metaTag);
+    }
+    metaTag.content = activeBg;
+  }, [authLoading, user, useLocalSession, isDarkMode, themeModeSettings.bg]);
+
   const [keySoundsEnabled, setKeySoundsEnabled] = useState(() => {
     const saved = localStorage.getItem('digital_window_key_sounds');
     return saved !== 'false';
@@ -262,15 +312,159 @@ export default function DigitalWindow() {
   useEffect(() => {
     localStorage.setItem('digital_window_key_sounds', String(keySoundsEnabled));
     keySoundsEnabledRef.current = keySoundsEnabled;
-  }, [keySoundsEnabled]);
+    if (user) {
+      saveConfigCloud({ keySoundsEnabled });
+    }
+  }, [keySoundsEnabled, user]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_key_sound_profile', keySoundProfile);
     keySoundProfileRef.current = keySoundProfile;
-  }, [keySoundProfile]);
+    if (user) {
+      saveConfigCloud({ keySoundProfile });
+    }
+  }, [keySoundProfile, user]);
 
   const keySoundsEnabledRef = React.useRef(keySoundsEnabled);
   const keySoundProfileRef = React.useRef(keySoundProfile);
+
+  const userRef = React.useRef(user);
+  const activeNoteIdRef = React.useRef(activeNoteId);
+  const activeNoteRef = React.useRef(activeNote);
+
+  useEffect(() => {
+    userRef.current = user;
+    activeNoteIdRef.current = activeNoteId;
+    activeNoteRef.current = activeNote;
+  }, [user, activeNoteId, activeNote]);
+
+  const saveConfigCloud = async (updates: Record<string, any>) => {
+    if (!user) return;
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, {
+        ...updates,
+        userId: user.uid,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.themeId !== undefined && data.themeId !== selectedThemeId) {
+          setSelectedThemeId(data.themeId);
+        }
+        if (data.isDarkMode !== undefined && data.isDarkMode !== isDarkMode) {
+          setIsDarkMode(data.isDarkMode);
+        }
+        if (data.showClock !== undefined && data.showClock !== showClock) {
+          setShowClock(data.showClock);
+        }
+        if (data.showStatusBar !== undefined && data.showStatusBar !== showStatusBar) {
+          setShowStatusBar(data.showStatusBar);
+        }
+        if (data.fontPreference !== undefined && data.fontPreference !== fontPreference) {
+          setFontPreference(data.fontPreference);
+        }
+        if (data.keySoundsEnabled !== undefined && data.keySoundsEnabled !== keySoundsEnabled) {
+          setKeySoundsEnabled(data.keySoundsEnabled);
+        }
+        if (data.keySoundProfile !== undefined && data.keySoundProfile !== keySoundProfile) {
+          setKeySoundProfile(data.keySoundProfile as any);
+        }
+        if (data.focusMode !== undefined && data.focusMode !== focusMode) {
+          setFocusMode(data.focusMode);
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
+    });
+
+    return unsubscribe;
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setFirestoreNotesLoaded(false);
+      return;
+    }
+
+    const notesColRef = collection(db, 'users', user.uid, 'notes');
+    const unsubscribe = onSnapshot(notesColRef, (snapshot) => {
+      if (snapshot.metadata.hasPendingWrites) {
+        return;
+      }
+
+      const fetchedNotes: Note[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        fetchedNotes.push({
+          id: docSnap.id,
+          title: data.title || '',
+          content: data.content || '',
+          updatedAt: data.updatedAt || Date.now(),
+        });
+      });
+
+      if (fetchedNotes.length > 0) {
+        setNotesList(fetchedNotes);
+        setFirestoreNotesLoaded(true);
+      } else {
+        setFirestoreNotesLoaded(true);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/notes`);
+    });
+
+    return unsubscribe;
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !firestoreNotesLoaded) return;
+
+    const migrateLocalToCloud = async () => {
+      const local = localStorage.getItem('digital_window_all_notes');
+      if (!local) return;
+      try {
+        const parsed: Note[] = JSON.parse(local);
+        if (parsed && parsed.length > 0) {
+          for (const note of parsed) {
+            const existsInCloud = notesList.some(cn => cn.id === note.id);
+            if (!existsInCloud) {
+              const noteDocRef = doc(db, 'users', user.uid, 'notes', note.id);
+              await setDoc(noteDocRef, {
+                id: note.id,
+                userId: user.uid,
+                title: note.title,
+                content: note.content,
+                updatedAt: note.updatedAt
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Cloud Migration Handshake Error: ", err);
+      }
+    };
+
+    migrateLocalToCloud();
+  }, [user, firestoreNotesLoaded]);
 
   const [focusMode, setFocusMode] = useState(() => {
     return localStorage.getItem('digital_window_focus') === 'true';
@@ -292,7 +486,7 @@ export default function DigitalWindow() {
   };
 
   const getSelectionStats = () => {
-    if (!editor) return { words: 0, chars: 0, hasSelection: false };
+    if (!editor || editor.isDestroyed) return { words: 0, chars: 0, hasSelection: false };
     const { from, to } = editor.state.selection;
     if (from === to) return { words: 0, chars: 0, hasSelection: false };
     const selectedText = editor.state.doc.textBetween(from, to, ' ');
@@ -302,7 +496,7 @@ export default function DigitalWindow() {
   };
 
   const transformSelectedText = (mode: 'upper' | 'lower' | 'title' | 'sentence') => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     const { from, to } = editor.state.selection;
     if (from === to) return;
     const selectedText = editor.state.doc.textBetween(from, to, ' ');
@@ -323,7 +517,7 @@ export default function DigitalWindow() {
   };
 
   const insertTimestamp = () => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     const rawDate = new Date();
     const year = rawDate.getFullYear();
     const month = String(rawDate.getMonth() + 1).padStart(2, '0');
@@ -337,25 +531,25 @@ export default function DigitalWindow() {
   };
 
   const insertHorizontalLine = () => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     editor.chain().focus().setHorizontalRule().run();
     setContextMenu(null);
   };
 
   const toggleBlockquote = () => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     editor.chain().focus().toggleBlockquote().run();
     setContextMenu(null);
   };
 
   const clearFormatting = () => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     editor.chain().focus().clearNodes().unsetAllMarks().run();
     setContextMenu(null);
   };
 
   const removeAllTimestampsInNote = () => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     const currentHtml = editor.getHTML();
     const cleanedHtml = currentHtml.replace(/\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\]\s?/g, '');
     editor.commands.setContent(cleanedHtml);
@@ -363,7 +557,7 @@ export default function DigitalWindow() {
   };
 
   const removeAllHorizontalLinesInNote = () => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     const currentHtml = editor.getHTML();
     const cleanedHtml = currentHtml.replace(/<hr\s*\/?>/g, '');
     editor.commands.setContent(cleanedHtml);
@@ -371,7 +565,7 @@ export default function DigitalWindow() {
   };
 
   const deleteCurrentBlockOrSelection = () => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     const { from, to } = editor.state.selection;
     if (from === to) {
       editor.chain().focus().selectParentNode().deleteSelection().run();
@@ -382,7 +576,7 @@ export default function DigitalWindow() {
   };
 
   const clearActiveNoteContent = () => {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     editor.commands.setContent('');
     setConfirmClearActive(false);
     setContextMenu(null);
@@ -461,8 +655,8 @@ export default function DigitalWindow() {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
-      Underline,
+      StarterKit.configure({}),
+      Underline.configure({}),
       Placeholder.configure({
         placeholder: 'dump your thoughts here...',
       }),
@@ -491,7 +685,7 @@ export default function DigitalWindow() {
 
   // Keep editor content in sync when switching notes
   useEffect(() => {
-    if (editor && activeNote.content !== editor.getHTML()) {
+    if (editor && !editor.isDestroyed && activeNote.content !== editor.getHTML()) {
       editor.commands.setContent(activeNote.content);
     }
   }, [activeNoteId, editor]);
@@ -528,17 +722,18 @@ export default function DigitalWindow() {
     };
   }, [isSidebarPinned]);
 
-  const handleMouseEnter = () => {
+  const handleMouseEnter = (delay: number | React.MouseEvent = 400) => {
     if (typeof window !== 'undefined' && !window.matchMedia('(hover: hover)').matches) {
       return;
     }
+    const delayMs = typeof delay === 'number' ? delay : 400;
     hoverRef.current = true;
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     hoverTimeoutRef.current = setTimeout(() => {
       if (hoverRef.current) {
         setIsSidebarHovered(true);
       }
-    }, 400);
+    }, delayMs);
   };
 
   const handleMouseLeave = () => {
@@ -551,7 +746,7 @@ export default function DigitalWindow() {
       if (!hoverRef.current) {
         setIsSidebarHovered(false);
       }
-    }, 50);
+    }, 150);
   };
 
   useEffect(() => {
@@ -589,29 +784,47 @@ export default function DigitalWindow() {
     } else {
       document.documentElement.classList.remove('dark');
     }
-  }, [isDarkMode]);
+    if (user) {
+      saveConfigCloud({ isDarkMode });
+    }
+  }, [isDarkMode, user]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_theme_id', selectedThemeId);
-  }, [selectedThemeId]);
+    if (user) {
+      saveConfigCloud({ themeId: selectedThemeId });
+    }
+  }, [selectedThemeId, user]);
 
 
 
   useEffect(() => {
     localStorage.setItem('digital_window_show_clock', String(showClock));
-  }, [showClock]);
+    if (user) {
+      saveConfigCloud({ showClock });
+    }
+  }, [showClock, user]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_show_status', String(showStatusBar));
-  }, [showStatusBar]);
+    if (user) {
+      saveConfigCloud({ showStatusBar });
+    }
+  }, [showStatusBar, user]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_font', fontPreference);
-  }, [fontPreference]);
+    if (user) {
+      saveConfigCloud({ fontPreference });
+    }
+  }, [fontPreference, user]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_focus', String(focusMode));
-  }, [focusMode]);
+    if (user) {
+      saveConfigCloud({ focusMode });
+    }
+  }, [focusMode, user]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -627,33 +840,92 @@ export default function DigitalWindow() {
     const newNote = { id: Date.now().toString(), title: '', content: '', updatedAt: Date.now() };
     setNotesList(prev => [newNote, ...prev]);
     setActiveNoteId(newNote.id);
+
+    const usr = userRef.current;
+    if (usr) {
+      const noteDocRef = doc(db, 'users', usr.uid, 'notes', newNote.id);
+      setDoc(noteDocRef, {
+        id: newNote.id,
+        userId: usr.uid,
+        title: newNote.title,
+        content: newNote.content,
+        updatedAt: newNote.updatedAt
+      }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${usr.uid}/notes/${newNote.id}`));
+    }
   }, []);
 
   const deleteNoteById = React.useCallback((id: string) => {
+    let emptyCreatedId: string | null = null;
+    const usr = userRef.current;
+    const actId = activeNoteIdRef.current;
+
     setNotesList(prev => {
       if (prev.length === 1) {
         const newNote = { id: Date.now().toString(), title: '', content: '', updatedAt: Date.now() };
+        emptyCreatedId = newNote.id;
         setActiveNoteId(newNote.id);
         return [newNote];
       } else {
         const newList = prev.filter(n => n.id !== id);
-        if (activeNoteId === id) {
+        if (actId === id) {
           const nextActive = newList[0] || prev[0];
           if (nextActive) setActiveNoteId(nextActive.id);
         }
         return newList;
       }
     });
-  }, [activeNoteId]);
+
+    if (usr) {
+      const noteDocRef = doc(db, 'users', usr.uid, 'notes', id);
+      deleteDoc(noteDocRef).catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${usr.uid}/notes/${id}`));
+
+      if (emptyCreatedId) {
+        const newEmptyRef = doc(db, 'users', usr.uid, 'notes', emptyCreatedId);
+        setDoc(newEmptyRef, {
+          id: emptyCreatedId,
+          userId: usr.uid,
+          title: '',
+          content: '',
+          updatedAt: Date.now()
+        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${usr.uid}/notes/${emptyCreatedId}`));
+      }
+    }
+  }, []);
 
   const updateActiveNote = (updates: Partial<Note>) => {
+    const actId = activeNoteIdRef.current;
+    const usr = userRef.current;
+    const nowStamp = Date.now();
+
     setNotesList(prev => 
       prev.map(n => 
-        n.id === activeNoteId 
-          ? { ...n, ...updates, updatedAt: Date.now() } 
+        n.id === actId 
+          ? { ...n, ...updates, updatedAt: nowStamp } 
           : n
       )
     );
+
+    if (usr && actId) {
+      setSaveStatus('saving');
+      if (cloudSaveTimeoutRef.current) clearTimeout(cloudSaveTimeoutRef.current);
+      cloudSaveTimeoutRef.current = setTimeout(async () => {
+        try {
+          const actNote = activeNoteRef.current;
+          const noteDocRef = doc(db, 'users', usr.uid, 'notes', actId);
+          await setDoc(noteDocRef, {
+            id: actId,
+            userId: usr.uid,
+            title: updates.title !== undefined ? updates.title : actNote?.title || '',
+            content: updates.content !== undefined ? updates.content : actNote?.content || '',
+            updatedAt: nowStamp
+          }, { merge: true });
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 1000);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${usr.uid}/notes/${actId}`);
+        }
+      }, 1500);
+    }
   };
 
   const handleDeleteNote = (e: React.MouseEvent, id: string) => {
@@ -795,6 +1067,184 @@ export default function DigitalWindow() {
     setContextMenu({ x, y, visible: true });
   };
 
+  const handleSignIn = async () => {
+    if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      console.error("Sign-in failed: ", err);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="w-full h-[100dvh] flex items-center justify-center bg-[#F4F4F5] dark:bg-[#0F0F11] font-sans">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-[4px] border-black dark:border-white border-t-transparent dark:border-t-transparent animate-spin rounded-full" />
+          <span className="text-xs uppercase font-extrabold tracking-widest text-neutral-400 dark:text-neutral-500 animate-pulse">Initializing Window...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user && !useLocalSession) {
+    const landingBg = isDarkMode ? '#0F0F11' : '#F5F5F7';
+    const landingCardBg = isDarkMode ? '#1E1E22' : '#FFFFFF';
+    const landingText = isDarkMode ? '#F5F5F7' : '#111111';
+    const landingDotColor = isDarkMode ? '#ffffff10' : '#11111115';
+
+    return (
+      <div 
+        style={{ 
+          backgroundImage: `radial-gradient(${landingDotColor} 3px, transparent 3px)`, 
+          backgroundSize: '32px 32px',
+          backgroundColor: landingBg,
+          color: landingText,
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+          paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 12px)',
+          paddingRight: 'calc(env(safe-area-inset-right, 0px) + 12px)'
+        }}
+        className="w-full h-[100dvh] flex flex-col items-center justify-center transition-colors duration-300 animate-fade-in overflow-hidden select-none"
+      >
+        <div 
+          style={{ backgroundColor: landingCardBg, borderColor: isDarkMode ? '#FFFFFF40' : '#111111' }}
+          className="w-full max-w-[380px] sm:max-w-xl border-[4px] rounded-sm shadow-[6px_6px_0px_#11111126] sm:shadow-[12px_12px_0px_#11111126] dark:shadow-[6px_6px_0px_#00000050] sm:dark:shadow-[12px_12px_0px_#00000050] p-3 sm:p-7 flex flex-col gap-2.5 sm:gap-4.5 text-center relative overflow-hidden transition-all duration-300 my-auto"
+        >
+          <div className="absolute top-2.5 right-2.5 z-10">
+            <button 
+              onClick={() => setIsDarkMode(!isDarkMode)} 
+              className="p-1 rounded-sm border-2 border-transparent hover:border-neutral-200 dark:hover:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 transition-all cursor-pointer"
+              title="Toggle preview theme"
+            >
+              {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-1 sm:gap-2 mt-0.5 sm:mt-2 relative z-10">
+            <div 
+              style={{ backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5', borderColor: isDarkMode ? '#FFFFFF22' : '#111111' }}
+              className="mx-auto w-10 h-10 sm:w-14 sm:h-14 border-[2.5px] sm:border-[3px] border-black flex items-center justify-center font-black rounded-lg shadow-[2.5px_2.5px_0px_#11111126] dark:shadow-[2.5px_2.5px_0px_#00000045] mb-0.5 sm:mb-1 scale-100 sm:scale-105 relative select-none"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`w-5 h-5 sm:w-7 sm:h-7 ${isDarkMode ? 'text-neutral-100' : 'text-neutral-900'}`}>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+            </div>
+            
+            <h1 className="text-xl sm:text-4xl font-black tracking-tight uppercase leading-none bg-gradient-to-b from-neutral-900 to-neutral-750 dark:from-white dark:to-neutral-300 bg-clip-text">
+              web notes
+            </h1>
+            <p className="font-mono text-[8px] sm:text-[10px] font-black uppercase tracking-widest opacity-60 flex items-center justify-center gap-1 sm:gap-1.5">
+              <span>distraction-free text repository</span>
+              <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            </p>
+          </div>
+
+          <div style={{ backgroundColor: isDarkMode ? '#ffffff10' : '#11111110' }} className="w-full h-px relative z-10" />
+
+          {/* Styled feature list card rows */}
+          <div className="flex flex-col gap-1.5 sm:gap-3 text-left max-w-md mx-auto w-full relative z-10">
+            <div 
+              style={{ borderColor: isDarkMode ? '#FFFFFF15' : '#E4E4E7' }}
+              className={`flex gap-2 sm:gap-3.5 items-start p-2 sm:p-3 border-[2px] rounded-sm hover:border-black dark:hover:border-white/30 transition-all duration-200 group ${isDarkMode ? 'hover:bg-neutral-800/10' : 'hover:bg-neutral-50/50'}`}
+            >
+              <div 
+                className={`flex-shrink-0 w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-sm flex items-center justify-center font-extrabold text-[9px] sm:text-xs border-[2px] transition-all duration-200 ${
+                  isDarkMode 
+                    ? 'border-neutral-700 bg-neutral-800 text-neutral-400 group-hover:bg-white group-hover:text-black group-hover:border-white' 
+                    : 'border-neutral-300 bg-neutral-100 text-neutral-600 group-hover:bg-black group-hover:text-white group-hover:border-black'
+                }`}
+              >
+                01
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className={`font-extrabold text-[10px] sm:text-sm uppercase tracking-wide leading-tight ${isDarkMode ? 'text-neutral-200' : 'text-neutral-900'}`}>Distraction-Free Environment</span>
+                <span className={`text-[9px] sm:text-xs mt-0.5 sm:mt-1 leading-snug sm:leading-normal ${isDarkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>No clutter, no alerts. Just you, responsive typing feedback, and your writing.</span>
+              </div>
+            </div>
+
+            <div 
+              style={{ borderColor: isDarkMode ? '#FFFFFF15' : '#E4E4E7' }}
+              className={`flex gap-2 sm:gap-3.5 items-start p-2 sm:p-3 border-[2px] rounded-sm hover:border-black dark:hover:border-white/30 transition-all duration-200 group ${isDarkMode ? 'hover:bg-neutral-800/10' : 'hover:bg-neutral-50/50'}`}
+            >
+              <div 
+                className={`flex-shrink-0 w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-sm flex items-center justify-center font-extrabold text-[9px] sm:text-xs border-[2px] transition-all duration-200 ${
+                  isDarkMode 
+                    ? 'border-neutral-700 bg-neutral-800 text-neutral-400 group-hover:bg-white group-hover:text-black group-hover:border-white' 
+                    : 'border-neutral-300 bg-neutral-100 text-neutral-600 group-hover:bg-black group-hover:text-white group-hover:border-black'
+                }`}
+              >
+                02
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className={`font-extrabold text-[10px] sm:text-sm uppercase tracking-wide leading-tight ${isDarkMode ? 'text-neutral-200' : 'text-neutral-900'}`}>Durable Cloud Sync</span>
+                <span className={`text-[9px] sm:text-xs mt-0.5 sm:mt-1 leading-snug sm:leading-normal ${isDarkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>Edits sync to a fully hardened Cloud Firestore back-end automatically.</span>
+              </div>
+            </div>
+
+            <div 
+              style={{ borderColor: isDarkMode ? '#FFFFFF15' : '#E4E4E7' }}
+              className={`flex gap-2 sm:gap-3.5 items-start p-2 sm:p-3 border-[2px] rounded-sm hover:border-black dark:hover:border-white/30 transition-all duration-200 group ${isDarkMode ? 'hover:bg-neutral-800/10' : 'hover:bg-neutral-50/50'}`}
+            >
+              <div 
+                className={`flex-shrink-0 w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-sm flex items-center justify-center font-extrabold text-[9px] sm:text-xs border-[2px] transition-all duration-200 ${
+                  isDarkMode 
+                    ? 'border-neutral-700 bg-neutral-800 text-neutral-400 group-hover:bg-white group-hover:text-black group-hover:border-white' 
+                    : 'border-neutral-300 bg-neutral-100 text-neutral-600 group-hover:bg-black group-hover:text-white group-hover:border-black'
+                }`}
+              >
+                03
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className={`font-extrabold text-[10px] sm:text-sm uppercase tracking-wide leading-tight ${isDarkMode ? 'text-neutral-200' : 'text-neutral-900'}`}>Secure Multi-User</span>
+                <span className={`text-[9px] sm:text-xs mt-0.5 sm:mt-1 leading-snug sm:leading-normal ${isDarkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>Data is isolated using strict rules. Only you can access your documents.</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5 sm:gap-2 mt-0.5 sm:px-6 relative z-10">
+            <button
+              onClick={handleSignIn}
+              style={{
+                borderColor: isDarkMode ? '#FFFFFF22' : '#111111'
+              }}
+              className="w-full py-2 sm:py-3 text-xs sm:text-sm font-black border-[3px] bg-black hover:bg-neutral-900 text-white dark:bg-white dark:text-black dark:hover:bg-neutral-100 transition-all shadow-[2.5px_2.5px_0px_#11111126] dark:shadow-[2.5px_2.5px_0px_#00000045] active:translate-y-[2px] active:translate-x-[2px] active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2.5 cursor-pointer rounded-sm font-sans"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+              </svg>
+              <span>Continue with Google</span>
+            </button>
+
+            <button
+              onClick={() => {
+                if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                setUseLocalSession(true);
+                sessionStorage.setItem('digital_window_offline_session', 'true');
+              }}
+              style={{
+                borderColor: isDarkMode ? '#FFFFFF22' : '#111111'
+              }}
+              className={`w-full py-2 text-[10px] sm:text-xs font-black border-[2px] border-dashed hover:border-solid transition-all rounded-sm uppercase tracking-wider cursor-pointer ${
+                isDarkMode 
+                  ? 'text-neutral-300 hover:bg-white hover:text-black hover:border-white' 
+                  : 'text-neutral-900 hover:bg-black hover:text-white hover:border-black'
+              }`}
+            >
+              Use Local Sandbox (No Sync)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const funkyBorder = 'border-[3px] border-black';
   const funkyShadow = 'shadow-[6px_6px_0px_#000] hover:shadow-[3px_3px_0px_#000]';
   const funkyActive = 'hover:translate-x-[3px] hover:translate-y-[3px] active:shadow-none active:translate-x-[6px] active:translate-y-[6px]';
@@ -918,6 +1368,16 @@ export default function DigitalWindow() {
 
       `}</style>
 
+      {/* Extreme Left Hover Detector Strip */}
+      {!isSidebarOpen && !focusMode && (
+        <div
+          onMouseEnter={() => handleMouseEnter(550)}
+          onMouseLeave={handleMouseLeave}
+          className="fixed left-0 top-0 bottom-0 w-4 z-40 bg-transparent cursor-default"
+          title="Hover edge to reveal sidebar"
+        />
+      )}
+
       {/* Sidebar Overlay on Mobile/Tablet */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -954,11 +1414,13 @@ export default function DigitalWindow() {
         <div 
           style={{
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
-            paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+            paddingBottom: isMobile 
+              ? 'calc(env(safe-area-inset-bottom, 0px) + 76px)' 
+              : 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
             paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 16px)',
             paddingRight: 'calc(env(safe-area-inset-right, 0px) + 16px)'
           }}
-          className="w-screen sm:w-[384px] max-w-full h-full flex flex-col gap-4 sm:gap-6 font-sans justify-between box-border min-h-0"
+          className="w-[100vw] sm:w-[381px] flex-shrink-0 h-full flex flex-col gap-4 sm:gap-6 font-sans justify-between box-border min-h-0"
         >
           <AnimatePresence mode="wait">
             {isSettingsExpanded ? (
@@ -968,251 +1430,378 @@ export default function DigitalWindow() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
                 transition={{ duration: 0.15 }}
-                className="flex-1 flex flex-col gap-3 sm:gap-4 min-h-0 justify-between"
+                className="flex-1 flex flex-col gap-3 sm:gap-4 min-h-0 justify-between font-sans"
               >
                 <div className="flex-1 flex flex-col gap-4 min-h-0">
-                  <div className="flex justify-between items-center px-1 flex-shrink-0 pb-3 border-b-[3px] border-black">
+                  <div className="flex justify-between items-center px-1 flex-shrink-0 pb-1.5 border-b-[3px] border-black">
                     <h2 className="text-xl font-black tracking-widest uppercase flex items-center gap-2">
-                      <Settings size={22} /> SETTINGS
+                      <Settings size={22} className="animate-spin-slow" /> SETTINGS
                     </h2>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto pr-1 pt-1 custom-scrollbar flex flex-col gap-4">
-                    {/* Settings Toggles */}
-                    <div className="flex flex-col gap-3">
-                      {/* Show Clock */}
+                  {/* Settings Tab Selector */}
+                  <div className="flex border-[3px] border-black p-0.5 bg-neutral-100 dark:bg-neutral-900 shadow-[2px_2px_0px_#000] flex-shrink-0 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
+                    {(['display', 'themes', 'cloud'] as const).map(tab => (
                       <button
-                        onClick={() => setShowClock(prev => !prev)}
-                        style={{
-                          backgroundColor: showClock ? themeModeSettings.activeNoteBg : themeModeSettings.cardBg,
-                          color: showClock ? themeModeSettings.activeNoteText : themeModeSettings.cardText
-                        }}
-                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
-                      >
-                        <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Show Clock</span>
-                        <div 
-                          style={{
-                            borderColor: showClock ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
-                            backgroundColor: showClock ? themeModeSettings.activeNoteText : 'transparent',
-                            color: themeModeSettings.activeNoteBg
-                          }}
-                          className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
-                        >
-                          {showClock && "✓"}
-                        </div>
-                      </button>
-
-                      {/* Show Stats Panel */}
-                      <button
-                        onClick={() => setShowStatusBar(prev => !prev)}
-                        style={{
-                          backgroundColor: showStatusBar ? themeModeSettings.activeNoteBg : themeModeSettings.cardBg,
-                          color: showStatusBar ? themeModeSettings.activeNoteText : themeModeSettings.cardText
-                        }}
-                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
-                      >
-                        <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Show Stats Panel</span>
-                        <div 
-                          style={{
-                            borderColor: showStatusBar ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
-                            backgroundColor: showStatusBar ? themeModeSettings.activeNoteText : 'transparent',
-                            color: themeModeSettings.activeNoteBg
-                          }}
-                          className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
-                        >
-                          {showStatusBar && "✓"}
-                        </div>
-                      </button>
-
-                      {/* Focus Mode */}
-                      <button
-                        onClick={() => setFocusMode(prev => !prev)}
-                        style={{
-                          backgroundColor: focusMode ? themeModeSettings.activeNoteBg : themeModeSettings.cardBg,
-                          color: focusMode ? themeModeSettings.activeNoteText : themeModeSettings.cardText
-                        }}
-                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
-                        title="Hides toolbars when typing for distraction-free writing. Hover over top to reveal header."
-                      >
-                        <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Distraction-Free Mode</span>
-                        <div 
-                          style={{
-                            borderColor: focusMode ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
-                            backgroundColor: focusMode ? themeModeSettings.activeNoteText : 'transparent',
-                            color: themeModeSettings.activeNoteBg
-                          }}
-                          className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
-                        >
-                          {focusMode && "✓"}
-                        </div>
-                      </button>
-
-                      {/* Keyboard Press Sounds */}
-                      <div className="flex flex-col gap-1 w-full">
-                        <button
-                          onClick={() => setKeySoundsEnabled(prev => !prev)}
-                          style={{
-                            backgroundColor: keySoundsEnabled ? themeModeSettings.activeNoteBg : themeModeSettings.cardBg,
-                            color: keySoundsEnabled ? themeModeSettings.activeNoteText : themeModeSettings.cardText
-                          }}
-                          className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
-                          title="Play satisfying mechanical keyboard click sounds as you type"
-                        >
-                          <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Typing Sound</span>
-                          <div 
-                            style={{
-                              borderColor: keySoundsEnabled ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
-                              backgroundColor: keySoundsEnabled ? themeModeSettings.activeNoteText : 'transparent',
-                              color: themeModeSettings.activeNoteBg
-                            }}
-                            className={`w-5 h-5 border-[3.5px] flex items-center justify-center font-black text-xs`}
-                          >
-                            {keySoundsEnabled && "✓"}
-                          </div>
-                        </button>
-
-                        {/* Sound Profile Selectors */}
-                        {keySoundsEnabled && (
-                          <div 
-                            style={{ backgroundColor: themeModeSettings.cardBg }} 
-                            className="grid grid-cols-2 gap-1 border-[3px] border-black p-1 w-[92%] mx-auto mt-0.5"
-                          >
-                            <button
-                              onClick={() => setKeySoundProfile('thocky')}
-                              style={
-                                keySoundProfile === 'thocky'
-                                  ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
-                                  : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
-                              }
-                              className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 ${funkyTransition}`}
-                              title="Play soft, creamy, dampened mechanical thocks"
-                            >
-                              Soft Thocky
-                            </button>
-                            <button
-                              onClick={() => setKeySoundProfile('mechanical')}
-                              style={
-                                keySoundProfile === 'mechanical'
-                                  ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
-                                  : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
-                              }
-                              className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 ${funkyTransition}`}
-                              title="Play crisp, clacky switches with distinct metallic resonance"
-                            >
-                              Mechanical
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Export Note Button */}
-                      <button
-                        onClick={exportNoteAsTxt}
-                        style={{
+                        key={tab}
+                        onClick={() => setSettingsTab(tab)}
+                        style={settingsTab === tab ? {
                           backgroundColor: themeModeSettings.activeNoteBg,
                           color: themeModeSettings.activeNoteText
+                        } : {
+                          color: themeModeSettings.cardText
                         }}
-                        className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
-                        title="Save current note to device as a TXT file"
+                        className={`flex-1 py-1.5 text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          settingsTab === tab 
+                            ? 'shadow-sm font-black' 
+                            : 'opacity-75 hover:opacity-100 font-extrabold'
+                        }`}
                       >
-                        <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Export Note (.txt)</span>
-                        <div className="flex items-center justify-center p-0.5">
-                          <Download size={16} />
-                        </div>
+                        {tab === 'display' && <Eye size={12} />}
+                        {tab === 'themes' && <Sun size={12} />}
+                        {tab === 'cloud' && <Clock size={12} />}
+                        <span className="uppercase">{tab}</span>
                       </button>
-                    </div>
+                    ))}
+                  </div>
 
-
-
-                    {/* Font Style */}
-                    <div className="flex flex-col gap-1.5 mt-2">
-                      <span className="text-xs uppercase tracking-wider font-black opacity-85 px-1">Editor Font Style</span>
-                      <div style={{ backgroundColor: themeModeSettings.cardBg }} className="grid grid-cols-3 gap-1 border-[3px] border-black p-1">
-                        {(['sans', 'mono', 'serif'] as const).map(f => (
+                  <div className="flex-1 overflow-y-auto pr-1 pt-1 custom-scrollbar flex flex-col gap-4 min-h-0">
+                    {settingsTab === 'display' && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex flex-col gap-3"
+                      >
+                        {/* Show Clock */}
+                        <div className="flex items-center justify-between w-full p-3 sm:p-4 border-[3px] border-black rounded-sm bg-black/5 relative">
+                          <div className="flex flex-col text-left pr-2 flex-1 min-w-0">
+                            <span className="uppercase text-xs font-black tracking-wider leading-tight">Show Clock</span>
+                            <span className="text-[10px] font-sans tracking-wide font-medium opacity-60 leading-normal mt-0.5">DISPLAY LOCAL TIME INDICATOR IN STATUS BAR</span>
+                          </div>
                           <button
-                            key={f}
-                            onClick={() => setFontPreference(f)}
-                            style={fontPreference === f ? {
-                              backgroundColor: themeModeSettings.activeNoteBg,
-                              color: themeModeSettings.activeNoteText,
-                              borderColor: themeModeSettings.activeNoteBg
-                            } : {
-                              backgroundColor: themeModeSettings.sidebarBg,
-                              color: themeModeSettings.cardText,
-                              borderColor: "transparent"
+                            onClick={() => {
+                              setShowClock(prev => !prev);
+                              if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
                             }}
-                            className={`py-2 text-xs font-black uppercase border-2 transition-all duration-75 ${
-                              fontPreference === f
-                                ? ''
-                                : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'
-                            }`}
+                            style={{
+                              backgroundColor: showClock ? themeModeSettings.activeNoteBg : themeModeSettings.sidebarBg,
+                            }}
+                            className="w-12 h-[26px] border-[3px] border-black flex items-center p-[2px] cursor-pointer rounded-sm transition-colors duration-150 select-none shadow-[1.5px_1.5px_0px_#000] active:translate-x-[0.5px] active:translate-y-[0.5px] active:shadow-[1px_1px_0px_#000]"
+                            title={`Turn clock ${showClock ? 'OFF' : 'ON'}`}
                           >
-                            {f}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* App Theme */}
-                    <div className="flex flex-col gap-1.5 mt-2 border-t-[3px] border-black/10 dark:border-white/10 pt-2.5">
-                      <span className="text-xs uppercase tracking-wider font-extrabold px-1 opacity-80">App Theme variant</span>
-                      <div style={{ backgroundColor: themeModeSettings.cardBg }} className="flex flex-col gap-2 p-1.5 border-[3px] border-black">
-                        {APP_THEMES.map(theme => {
-                          const isSelected = selectedThemeId === theme.id;
-                          const currentSettings = isDarkMode ? theme.dark : theme.light;
-                          
-                          return (
-                            <button
-                              key={theme.id}
-                              type="button"
-                              onClick={() => setSelectedThemeId(theme.id)}
-                              style={isSelected ? {
-                                backgroundColor: themeModeSettings.activeNoteBg,
-                                color: themeModeSettings.activeNoteText,
-                                borderColor: themeModeSettings.activeNoteBg
-                              } : {
-                                backgroundColor: themeModeSettings.sidebarBg,
-                                color: themeModeSettings.cardText,
-                                borderColor: "transparent"
+                            <motion.div 
+                              layout
+                              style={{
+                                backgroundColor: showClock ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
                               }}
-                              className={`w-full group text-left p-2 border-2 select-none cursor-pointer flex items-center justify-between gap-3 ${funkyTransition} ${
-                                isSelected 
-                                  ? 'font-black shadow-[2px_2px_0px_#000]' 
-                                  : 'font-bold hover:opacity-90'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                {/* Visual Color Swatch */}
-                                <div className="flex items-center -space-x-1 flex-shrink-0">
-                                  <div className="w-4 h-4 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.bg }} title="Page BG" />
-                                  <div className="w-4 h-4 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.sidebarBg }} title="Sidebar" />
-                                  <div className="w-4 h-4 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.cardBg }} title="Card" />
-                                  <div className="w-4 h-4 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.activeNoteBg }} title="Active Note" />
-                                </div>
-                                <span className="text-[11px] uppercase tracking-wider truncate">
-                                  {theme.name}
-                                </span>
-                              </div>
+                              className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
+                              animate={{ x: showClock ? 20 : 0 }}
+                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Show Stats Panel */}
+                        <div className="flex items-center justify-between w-full p-3 sm:p-4 border-[3px] border-black rounded-sm bg-black/5 relative">
+                          <div className="flex flex-col text-left pr-2 flex-1 min-w-0">
+                            <span className="uppercase text-xs font-black tracking-wider leading-tight">Show Stats Panel</span>
+                            <span className="text-[10px] font-sans tracking-wide font-medium opacity-60 leading-normal mt-0.5">SHOW WORD AND CHARACTER COUNTS IN STATUS BAR</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowStatusBar(prev => !prev);
+                              if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                            }}
+                            style={{
+                              backgroundColor: showStatusBar ? themeModeSettings.activeNoteBg : themeModeSettings.sidebarBg,
+                            }}
+                            className="w-12 h-[26px] border-[3px] border-black flex items-center p-[2px] cursor-pointer rounded-sm transition-colors duration-150 select-none shadow-[1.5px_1.5px_0px_#000] active:translate-x-[0.5px] active:translate-y-[0.5px] active:shadow-[1px_1px_0px_#000]"
+                            title={`Turn stats ${showStatusBar ? 'OFF' : 'ON'}`}
+                          >
+                            <motion.div 
+                              layout
+                              style={{
+                                backgroundColor: showStatusBar ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                              }}
+                              className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
+                              animate={{ x: showStatusBar ? 20 : 0 }}
+                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Distraction-Free Mode */}
+                        <div className="flex items-center justify-between w-full p-3 sm:p-4 border-[3px] border-black rounded-sm bg-black/5 relative" title="Hides toolbars when typing. Hover over top to reveal.">
+                          <div className="flex flex-col text-left pr-2 flex-1 min-w-0">
+                            <span className="uppercase text-xs font-black tracking-wider leading-tight">Focus Mode</span>
+                            <span className="text-[10px] font-sans tracking-wide font-medium opacity-60 leading-normal mt-0.5">HIDES FORMATTING CONTROLS AND BARS WHEN TYPING</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setFocusMode(prev => !prev);
+                              if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                            }}
+                            style={{
+                              backgroundColor: focusMode ? themeModeSettings.activeNoteBg : themeModeSettings.sidebarBg,
+                            }}
+                            className="w-12 h-[26px] border-[3px] border-black flex items-center p-[2px] cursor-pointer rounded-sm transition-colors duration-150 select-none shadow-[1.5px_1.5px_0px_#000] active:translate-x-[0.5px] active:translate-y-[0.5px] active:shadow-[1px_1px_0px_#000]"
+                            title={`Turn focus mode ${focusMode ? 'OFF' : 'ON'}`}
+                          >
+                            <motion.div 
+                              layout
+                              style={{
+                                backgroundColor: focusMode ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                              }}
+                              className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
+                              animate={{ x: focusMode ? 20 : 0 }}
+                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Font Style Section */}
+                        <div className="flex flex-col gap-1.5 mt-2">
+                          <span className="text-xs uppercase tracking-wider font-black px-1 opacity-80">editor font options</span>
+                          <div style={{ backgroundColor: themeModeSettings.cardBg }} className="grid grid-cols-3 gap-1 border-[3px] border-black p-1">
+                            {(['sans', 'mono', 'serif'] as const).map(f => (
+                              <button
+                                key={f}
+                                onClick={() => setFontPreference(f)}
+                                style={fontPreference === f ? {
+                                  backgroundColor: themeModeSettings.activeNoteBg,
+                                  color: themeModeSettings.activeNoteText,
+                                  borderColor: themeModeSettings.activeNoteBg
+                                } : {
+                                  backgroundColor: themeModeSettings.sidebarBg,
+                                  color: themeModeSettings.cardText,
+                                  borderColor: "transparent"
+                                }}
+                                className={`py-1.5 text-xs font-black uppercase border-2 transition-all duration-75 cursor-pointer ${
+                                  fontPreference === f
+                                    ? 'shadow-[2px_2px_0px_#000]'
+                                    : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white font-extrabold'
+                                }`}
+                              >
+                                {f === 'sans' ? 'normal' : f}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {settingsTab === 'themes' && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex flex-col gap-3 animate-fade-in"
+                      >
+                        {/* App Theme Selection */}
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs uppercase tracking-wider font-extrabold px-1 opacity-80">App Theme Options</span>
+                          <div style={{ backgroundColor: themeModeSettings.cardBg }} className="flex flex-col gap-1.5 p-1.5 border-[3px] border-black max-h-[220px] overflow-y-auto custom-scrollbar">
+                            {APP_THEMES.map(theme => {
+                              const isSelected = selectedThemeId === theme.id;
+                              const currentSettings = isDarkMode ? theme.dark : theme.light;
                               
-                              <div className="flex items-center gap-1">
-                                {isSelected ? (
-                                  <div 
-                                    style={{ backgroundColor: themeModeSettings.bg, color: themeModeSettings.text }}
-                                    className="flex items-center justify-center w-4 h-4 border border-current rounded-full"
-                                  >
-                                    <Check size={8} strokeWidth={3} />
+                              return (
+                                <button
+                                  key={theme.id}
+                                  type="button"
+                                  onClick={() => setSelectedThemeId(theme.id)}
+                                  style={isSelected ? {
+                                    backgroundColor: themeModeSettings.activeNoteBg,
+                                    color: themeModeSettings.activeNoteText,
+                                    borderColor: themeModeSettings.activeNoteBg
+                                  } : {
+                                    backgroundColor: themeModeSettings.sidebarBg,
+                                    color: themeModeSettings.cardText,
+                                    borderColor: "transparent"
+                                  }}
+                                  className={`w-full group text-left p-2 border-2 select-none cursor-pointer flex items-center justify-between gap-3 ${funkyTransition} ${
+                                    isSelected 
+                                      ? 'font-black shadow-[2px_2px_0px_#000]' 
+                                      : 'font-bold hover:opacity-90'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {/* Visual Color Swatch */}
+                                    <div className="flex items-center -space-x-1 flex-shrink-0">
+                                      <div className="w-3.5 h-3.5 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.bg }} title="Page BG" />
+                                      <div className="w-3.5 h-3.5 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.sidebarBg }} title="Sidebar" />
+                                      <div className="w-3.5 h-3.5 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.cardBg }} title="Card" />
+                                      <div className="w-3.5 h-3.5 rounded-full border border-black/25 shadow-sm" style={{ backgroundColor: currentSettings.activeNoteBg }} title="Active Note" />
+                                    </div>
+                                    <span className="text-[11px] uppercase tracking-wider truncate">
+                                      {theme.name}
+                                    </span>
                                   </div>
-                                ) : (
-                                  <div className="w-4 h-4 border border-black/20 dark:border-white/20 rounded-full" />
-                                )}
-                              </div>
+                                  
+                                  <div className="flex items-center gap-1">
+                                    {isSelected ? (
+                                      <div 
+                                        style={{ backgroundColor: themeModeSettings.bg, color: themeModeSettings.text }}
+                                        className="flex items-center justify-center w-3.5 h-3.5 border border-current rounded-full"
+                                      >
+                                        <Check size={8} strokeWidth={3} />
+                                      </div>
+                                    ) : (
+                                      <div className="w-3.5 h-3.5 border border-black/20 dark:border-white/20 rounded-full" />
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Keyboard Press Sounds */}
+                        <div className="flex flex-col gap-1.5 w-full mt-2">
+                          <div className="flex items-center justify-between w-full p-3 sm:p-4 border-[3px] border-black rounded-sm bg-black/5 relative">
+                            <div className="flex flex-col text-left pr-2 flex-1 min-w-0">
+                              <span className="uppercase text-xs font-black tracking-wider leading-tight">Typing clicks</span>
+                              <span className="text-[10px] font-sans tracking-wide font-medium opacity-60 leading-normal mt-0.5">SATISFYING TYPEWRITER & MECHANICAL AUDIO</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                const nextState = !keySoundsEnabled;
+                                setKeySoundsEnabled(nextState);
+                                if (nextState) {
+                                  playKeySound('Space', keySoundProfile);
+                                }
+                              }}
+                              style={{
+                                backgroundColor: keySoundsEnabled ? themeModeSettings.activeNoteBg : themeModeSettings.sidebarBg,
+                              }}
+                              className="w-12 h-[26px] border-[3px] border-black flex items-center p-[2px] cursor-pointer rounded-sm transition-colors duration-150 select-none shadow-[1.5px_1.5px_0px_#000] active:translate-x-[0.5px] active:translate-y-[0.5px] active:shadow-[1px_1px_0px_#000]"
+                              title={`Turn typing clicks ${keySoundsEnabled ? 'OFF' : 'ON'}`}
+                            >
+                              <motion.div 
+                                layout
+                                style={{
+                                  backgroundColor: keySoundsEnabled ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                                }}
+                                className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
+                                animate={{ x: keySoundsEnabled ? 20 : 0 }}
+                                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                              />
                             </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                          </div>
 
+                          {/* Sound Profile Selectors */}
+                          {keySoundsEnabled && (
+                            <div 
+                              style={{ backgroundColor: themeModeSettings.cardBg }} 
+                              className="grid grid-cols-2 gap-1 border-[3px] border-black p-1 w-[92%] mx-auto mt-0.5"
+                            >
+                              <button
+                                onClick={() => setKeySoundProfile('thocky')}
+                                style={
+                                  keySoundProfile === 'thocky'
+                                    ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
+                                    : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
+                                }
+                                className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 transition-all cursor-pointer`}
+                                title="Play soft, creamy mechanical thocks"
+                              >
+                                Soft Thocky
+                              </button>
+                              <button
+                                onClick={() => setKeySoundProfile('mechanical')}
+                                style={
+                                  keySoundProfile === 'mechanical'
+                                    ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
+                                    : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
+                                }
+                                className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 transition-all cursor-pointer`}
+                                title="Play crisp clacky mechanical typing sounds"
+                              >
+                                Mechanical
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
 
+                    {settingsTab === 'cloud' && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex flex-col gap-3"
+                      >
+                        {/* Cloud Storage Account */}
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs uppercase tracking-wider font-extrabold px-1 opacity-80">Cloud Backup Sync</span>
+                          {user ? (
+                            <div style={{ backgroundColor: themeModeSettings.cardBg }} className="flex flex-col gap-3 p-3 border-[3px] border-black">
+                              <div className="flex items-center gap-3">
+                                {user.photoURL ? (
+                                  <img src={user.photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full border border-black/20" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-neutral-200 border border-black/20 flex items-center justify-center font-black text-xs uppercase text-neutral-700">
+                                    {user.email?.charAt(0) || 'U'}
+                                  </div>
+                                )}
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-xs font-black uppercase truncate">{user.displayName || 'Authorized User'}</span>
+                                  <span className="text-[10px] font-mono opacity-60 truncate">{user.email}</span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => signOut(auth)}
+                                className="w-full py-1.5 border-2 border-red-500 hover:bg-red-500 hover:text-white font-black text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                              >
+                                DISCONNECT CLOUD BACKUP
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ backgroundColor: themeModeSettings.cardBg }} className="flex flex-col gap-2 p-3 border-[3px] border-black text-center">
+                              <p className="text-[10px] font-bold opacity-60 uppercase">
+                                {useLocalSession ? 'Using Local Sandbox' : 'Cloud Sync is inactive.'}
+                              </p>
+                              <button
+                                onClick={handleSignIn}
+                                style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
+                                className="w-full py-2 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[2px_2px_0px_#000] active:translate-y-[1px] hover:opacity-90 cursor-pointer"
+                              >
+                                Connect Cloud Save
+                              </button>
+                              {useLocalSession && (
+                                <button
+                                  onClick={() => {
+                                    setUseLocalSession(false);
+                                    sessionStorage.removeItem('digital_window_offline_session');
+                                  }}
+                                  className="w-full py-1.5 border-2 border-dashed border-red-500 hover:border-solid hover:bg-neutral-800 dark:hover:bg-neutral-200 dark:hover:text-black hover:text-white hover:border-black font-black text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                >
+                                  Return to Login Screen
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Export Active Note Button Block style */}
+                        <div className="flex flex-col gap-1.5 mt-2 border-t-[3px] border-black/10 dark:border-white/10 pt-2.5">
+                          <span className="text-xs uppercase tracking-wider font-extrabold px-1 opacity-80">Active Note Backup</span>
+                          <button
+                            onClick={exportNoteAsTxt}
+                            style={{
+                              backgroundColor: themeModeSettings.activeNoteBg,
+                              color: themeModeSettings.activeNoteText
+                            }}
+                            className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
+                            title="Save current note to device as a TXT file"
+                          >
+                            <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Export Note (.txt)</span>
+                            <div className="flex items-center justify-center p-0.5">
+                              <Download size={16} />
+                            </div>
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
                   </div>
                 </div>
 
@@ -1333,19 +1922,19 @@ export default function DigitalWindow() {
                             key={note.id}
                             onClick={() => { setActiveNoteId(note.id); }}
                             style={noteCardStyle}
-                            className={`text-left px-5 py-5 flex flex-col gap-2 ${funkyTransition} cursor-pointer group ${funkyShadow} ${funkyActive} border-[3px] border-black`}
+                            className={`text-left px-5 py-5 flex flex-row items-center justify-between gap-4 ${funkyTransition} cursor-pointer group ${funkyShadow} ${funkyActive} border-[3px] border-black`}
                           >
-                            <div className="flex justify-between items-start">
+                            <div className="flex flex-col gap-2 flex-1 min-w-0">
                                <span className="font-black truncate text-xl uppercase">{note.title || 'UNTITLED'}</span>
-                               <button 
-                                  onClick={(e) => handleDeleteNote(e, note.id)} 
-                                  className="opacity-0 group-hover:opacity-100 hover:scale-110 transition-all duration-75 flex-shrink-0 ml-2"
-                                  title="Delete note"
-                               >
-                                  <X size={20} className={isActive ? "text-red-600" : "text-neutral-400 hover:text-red-600"} />
-                               </button>
+                               <span className="text-sm opacity-80 line-clamp-2 leading-relaxed font-mono whitespace-pre-wrap">{getNotePreviewText(note.content)}</span>
                             </div>
-                            <span className="text-sm opacity-80 line-clamp-2 leading-relaxed font-mono whitespace-pre-wrap">{getNotePreviewText(note.content)}</span>
+                            <button 
+                               onClick={(e) => handleDeleteNote(e, note.id)} 
+                               className="flex-shrink-0 w-10 h-10 border-[3px] border-black bg-red-500/10 text-red-500 hover:bg-[#ff5555] hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-[#ff5555] dark:hover:text-white hover:scale-105 hover:shadow-[2px_2px_0px_#000] active:translate-y-[1px] active:translate-x-[1px] cursor-pointer flex items-center justify-center rounded-sm"
+                               title="Delete note"
+                            >
+                               <Trash2 size={18} />
+                            </button>
                           </div>
                         );
                       })
@@ -1428,7 +2017,7 @@ export default function DigitalWindow() {
           
           <div className="flex sm:flex-1 flex-row justify-end items-center gap-1.5 sm:gap-4 flex-shrink-0">
             <AnimatePresence>
-              {editor && editor.can().undo() && (
+              {editor && !editor.isDestroyed && editor.can().undo() && (
                 <motion.button
                   key="undo-btn"
                   initial={{ opacity: 0, scale: 0.8, x: 10 }}
@@ -1446,7 +2035,7 @@ export default function DigitalWindow() {
             </AnimatePresence>
  
             <AnimatePresence>
-              {editor && editor.can().redo() && (
+              {editor && !editor.isDestroyed && editor.can().redo() && (
                 <motion.button
                   key="redo-btn"
                   initial={{ opacity: 0, scale: 0.8, x: 10 }}
@@ -1512,7 +2101,7 @@ export default function DigitalWindow() {
           </div>
 
           <div ref={editorRelativeContainerRef} className="w-full max-w-[1600px] flex-1 flex-shrink-0 relative">
-            {editor && (
+            {editor && !editor.isDestroyed && (
               <BubbleMenu 
                 editor={editor} 
                 shouldShow={({ state }) => {
@@ -1646,7 +2235,7 @@ export default function DigitalWindow() {
                 )}
               </BubbleMenu>
             )}
-            <EditorContent editor={editor} />
+            {editor && !editor.isDestroyed && <EditorContent editor={editor} />}
           </div>
         </main>
         
@@ -1658,7 +2247,9 @@ export default function DigitalWindow() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 20 }}
               style={{
-                bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+                bottom: isMobile 
+                  ? 'calc(env(safe-area-inset-bottom, 0px) + 72px)' 
+                  : 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
                 right: 'calc(env(safe-area-inset-right, 0px) + 16px)',
                 backgroundColor: themeModeSettings.cardBg,
                 color: themeModeSettings.cardText
@@ -1682,10 +2273,13 @@ export default function DigitalWindow() {
               exit={{ opacity: 0, y: 15, scale: 0.95 }}
               transition={{ duration: 0.15, ease: 'easeOut' }}
               style={{
+                bottom: isMobile 
+                  ? 'calc(env(safe-area-inset-bottom, 0px) + 72px)' 
+                  : 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
                 backgroundColor: saveStatus === 'saving' ? (isDarkMode ? '#D97706' : '#FEF3C7') : themeModeSettings.cardBg,
                 color: saveStatus === 'saving' ? (isDarkMode ? '#FFFFFF' : '#1F2937') : themeModeSettings.cardText
               }}
-              className={`absolute bottom-4 left-4 z-40 border-[3px] border-black ${funkyShadow} px-3 py-1.5 font-mono text-xs font-black flex items-center gap-2.5`}
+              className={`fixed left-4 z-40 border-[3px] border-black ${funkyShadow} px-3 py-1.5 font-mono text-xs font-black flex items-center gap-2.5`}
             >
               <div className="relative flex h-2 w-2 items-center justify-center">
                 {saveStatus === 'saving' && (
@@ -1782,9 +2376,9 @@ export default function DigitalWindow() {
                 </div>
 
                 <button
-                  disabled={!editor || !selection.hasSelection}
+                  disabled={!editor || editor.isDestroyed || !selection.hasSelection}
                   onClick={async () => {
-                    if (!editor) return;
+                    if (!editor || editor.isDestroyed) return;
                     const { from, to } = editor.state.selection;
                     if (from === to) return;
                     const selectedText = editor.state.doc.textBetween(from, to, ' ');
@@ -1801,9 +2395,9 @@ export default function DigitalWindow() {
                 </button>
 
                 <button
-                  disabled={!editor}
+                  disabled={!editor || editor.isDestroyed}
                   onClick={async () => {
-                    if (!editor) return;
+                    if (!editor || editor.isDestroyed) return;
                     try {
                       const text = await navigator.clipboard.readText();
                       editor.chain().focus().insertContent(text).run();
@@ -1937,8 +2531,10 @@ export default function DigitalWindow() {
                 className={`w-full max-w-sm border-[4px] border-black p-6 flex flex-col gap-4 text-center cursor-default shadow-[6px_6px_0px_#000]`}
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex justify-center text-red-500 mb-1">
-                  <Trash2 size={48} className="stroke-[2.5]" />
+                <div className="flex justify-center mb-1">
+                  <div className="w-16 h-16 rounded-full border-[3.5px] border-black bg-red-100 dark:bg-red-950/40 text-[#ff5555] dark:text-[#ff3333] flex items-center justify-center shadow-[3.5px_3.5px_0px_#000] -rotate-6 transition-all duration-200 hover:rotate-0 hover:scale-105">
+                    <Trash2 size={30} className="stroke-[2.5]" />
+                  </div>
                 </div>
                 <h3 className="text-xl sm:text-2xl font-black uppercase tracking-wide leading-tight">
                   Delete Note?

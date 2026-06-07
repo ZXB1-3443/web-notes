@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User preferences and sync settings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique user ID" },
+        "themeId": { "type": "string", "description": "ID of selected theme" },
+        "isDarkMode": { "type": "boolean", "description": "Whether dark mode is enabled" },
+        "showClock": { "type": "boolean", "description": "Whether custom clock is visible" },
+        "showStatusBar": { "type": "boolean", "description": "Whether custom status bar is visible" },
+        "fontPreference": { "type": "string", "description": "The selected font style" },
+        "keySoundsEnabled": { "type": "boolean", "description": "Whether mechanical sound effects are enabled" },
+        "keySoundProfile": { "type": "string", "description": "Mechanical key profile choice" },
+        "focusMode": { "type": "boolean", "description": "Whether distraction-free mode is toggled" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Timestamp of last update" }
+      },
+      "required": ["userId", "updatedAt"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "A specific note written by the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique note ID" },
+        "userId": { "type": "string", "description": "Reference to the owner user ID" },
+        "title": { "type": "string", "description": "The custom note title" },
+        "content": { "type": "string", "description": "HTML content representing the note from Tiptap editor" },
+        "updatedAt": { "type": "integer", "description": "UTC timestamp of the last write" }
+      },
+      "required": ["id", "userId", "content", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles with settings preferences"
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": "Note",
+      "description": "The private collection of notes belonging to a specific user"
+    }
+  }
+}

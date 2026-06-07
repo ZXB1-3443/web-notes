@@ -1930,10 +1930,10 @@ export default function DigitalWindow() {
                             </div>
                             <button 
                                onClick={(e) => handleDeleteNote(e, note.id)} 
-                               className="flex-shrink-0 w-10 h-10 border-[3px] border-black bg-red-500/10 text-red-500 hover:bg-[#ff5555] hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-[#ff5555] dark:hover:text-white hover:scale-105 hover:shadow-[2px_2px_0px_#000] active:translate-y-[1px] active:translate-x-[1px] cursor-pointer flex items-center justify-center rounded-sm"
-                               title="Delete note"
+                               className="flex-shrink-0 w-8 h-8 cursor-pointer flex items-center justify-center rounded-sm opacity-50 hover:opacity-100 hover:text-[#ff5555] transition-all duration-75 select-none"
+                               title="Close note"
                             >
-                               <Trash2 size={18} />
+                               <X size={20} className="stroke-[2.5]" />
                             </button>
                           </div>
                         );

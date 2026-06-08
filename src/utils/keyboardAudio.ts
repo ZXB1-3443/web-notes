@@ -21,7 +21,7 @@ function getAudioContext(): AudioContext | null {
  * Supports 'thocky' (deep, soft, creamy foam sound) and 'mechanical' (crisp, clacky switch feel).
  * No external file dependencies, highly responsive, zero-latency.
  */
-export function playKeySound(key: string, profile: 'thocky' | 'mechanical' = 'thocky') {
+export function playKeySound(key: string, profile: 'thocky' | 'mechanical' = 'thocky', volume: number = 1.0) {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -254,8 +254,9 @@ export function playKeySound(key: string, profile: 'thocky' | 'mechanical' = 'th
 
     // 8. Output Mixer
     const masterGainGate = ctx.createGain();
-    // Allow substantial level
-    masterGainGate.gain.setValueAtTime(profile === 'thocky' ? 1.5 : 1.3, now);
+    // Allow substantial level adjusted by dynamic volume
+    const baseVolume = profile === 'thocky' ? 1.5 : 1.3;
+    masterGainGate.gain.setValueAtTime(baseVolume * volume, now);
 
     clackGain.connect(masterGainGate);
     thockGain.connect(masterGainGate);
@@ -287,5 +288,56 @@ export function playKeySound(key: string, profile: 'thocky' | 'mechanical' = 'th
     }
   } catch (e) {
     console.error('Error playing procedural keyboard sound', e);
+  }
+}
+
+/**
+ * Procedurally synthesizes a rich metallic typewriter bell ('ding') chime.
+ * Instant start, elegant physical resonance decay, zero external buffers.
+ */
+export function playTypewriterBell(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // Dual oscillator synthesis modeling hand-crafted iron bell harmonics
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(1480, now);
+
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(2150, now);
+
+    const gain1 = ctx.createGain();
+    const gain2 = ctx.createGain();
+
+    // Sharp strike attack with logarithmic tail
+    gain1.gain.setValueAtTime(0.22 * volume, now);
+    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 1.1);
+
+    gain2.gain.setValueAtTime(0.09 * volume, now);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(950, now);
+
+    osc1.connect(gain1);
+    osc2.connect(gain2);
+
+    gain1.connect(filter);
+    gain2.connect(filter);
+    filter.connect(ctx.destination);
+
+    osc1.start(now);
+    osc2.start(now);
+
+    osc1.stop(now + 1.2);
+    osc2.stop(now + 0.8);
+  } catch (e) {
+    console.warn('Typewriter bell synthesis failed: ', e);
   }
 }

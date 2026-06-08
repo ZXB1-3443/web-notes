@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Maximize, Edit3, Moon, Sun, Menu as MenuIcon, Plus, X, Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Undo, Redo, Settings, Search, Download, ChevronDown, ChevronUp, Trash2, Check, Eye, EyeOff, Clock, Minus, Eraser, Info, Copy, Clipboard, FileText } from 'lucide-react';
+import { Maximize, Edit3, Moon, Sun, Menu as MenuIcon, Plus, X, Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Undo, Redo, Settings, Search, Download, ChevronDown, ChevronUp, Trash2, Check, Eye, EyeOff, Clock, Minus, Eraser, Info, Copy, Clipboard, FileText, Sparkles, Shield, Keyboard } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
-import { playKeySound } from '../utils/keyboardAudio';
+import { playKeySound, playTypewriterBell } from '../utils/keyboardAudio';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from '../utils/firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, User, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, deleteDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
 
 type Note = {
@@ -75,8 +75,8 @@ const APP_THEMES: AppTheme[] = [
       text: '#F5F5F7',
       cardBg: '#1F1F24',
       cardText: '#F5F5F7',
-      activeNoteBg: '#4B5563',
-      activeNoteText: '#FFFFFF'
+      activeNoteBg: '#A1A1AA',
+      activeNoteText: '#111111'
     }
   },
   {
@@ -183,9 +183,15 @@ export default function DigitalWindow() {
     }
   });
   const [useLocalSession, setUseLocalSession] = useState(() => {
-    return sessionStorage.getItem('digital_window_offline_session') === 'true';
+    return localStorage.getItem('digital_window_offline_session') !== 'false';
   });
   const [firestoreNotesLoaded, setFirestoreNotesLoaded] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authActionLoading, setAuthActionLoading] = useState(false);
+  const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
+  const [activeAuthTab, setActiveAuthTab] = useState<'email' | 'google'>('email');
   const cloudSaveTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [notesList, setNotesList] = useState<Note[]>(() => {
@@ -232,7 +238,7 @@ export default function DigitalWindow() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarPinned, setIsSidebarPinned] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'display' | 'themes' | 'cloud'>('display');
+  const [settingsTab, setSettingsTab] = useState<'display' | 'themes'>('display');
   const isSidebarOpen = isSidebarPinned || isSidebarHovered;
   const [isMobile, setIsMobile] = useState(false);
 
@@ -322,6 +328,21 @@ export default function DigitalWindow() {
     return (saved || 'thocky') as 'thocky' | 'mechanical';
   });
 
+  const [keySoundVolume, setKeySoundVolume] = useState<number>(() => {
+    const saved = localStorage.getItem('digital_window_key_sound_volume');
+    return saved !== null ? Number(saved) : 0.7;
+  });
+
+  const [bellSoundEnabled, setBellSoundEnabled] = useState(() => {
+    const saved = localStorage.getItem('digital_window_bell_sound_enabled');
+    return saved !== 'false';
+  });
+
+  const [showGridBg, setShowGridBg] = useState(() => {
+    const saved = localStorage.getItem('digital_window_show_grid_bg');
+    return saved !== 'false';
+  });
+
   useEffect(() => {
     localStorage.setItem('digital_window_key_sounds', String(keySoundsEnabled));
     keySoundsEnabledRef.current = keySoundsEnabled;
@@ -338,8 +359,35 @@ export default function DigitalWindow() {
     }
   }, [keySoundProfile, user]);
 
+  useEffect(() => {
+    localStorage.setItem('digital_window_key_sound_volume', String(keySoundVolume));
+    keySoundVolumeRef.current = keySoundVolume;
+    if (user) {
+      saveConfigCloud({ keySoundVolume });
+    }
+  }, [keySoundVolume, user]);
+
+  useEffect(() => {
+    localStorage.setItem('digital_window_bell_sound_enabled', String(bellSoundEnabled));
+    bellSoundEnabledRef.current = bellSoundEnabled;
+    if (user) {
+      saveConfigCloud({ bellSoundEnabled });
+    }
+  }, [bellSoundEnabled, user]);
+
+  useEffect(() => {
+    localStorage.setItem('digital_window_show_grid_bg', String(showGridBg));
+    showGridBgRef.current = showGridBg;
+    if (user) {
+      saveConfigCloud({ showGridBg });
+    }
+  }, [showGridBg, user]);
+
   const keySoundsEnabledRef = React.useRef(keySoundsEnabled);
   const keySoundProfileRef = React.useRef(keySoundProfile);
+  const keySoundVolumeRef = React.useRef(keySoundVolume);
+  const bellSoundEnabledRef = React.useRef(bellSoundEnabled);
+  const showGridBgRef = React.useRef(showGridBg);
 
   const userRef = React.useRef(user);
   const activeNoteIdRef = React.useRef(activeNoteId);
@@ -350,6 +398,15 @@ export default function DigitalWindow() {
     activeNoteIdRef.current = activeNoteId;
     activeNoteRef.current = activeNote;
   }, [user, activeNoteId, activeNote]);
+
+  const playClick = (key: string = 'Space') => {
+    if (keySoundsEnabledRef.current) {
+      playKeySound(key, keySoundProfileRef.current, keySoundVolumeRef.current);
+      if (key === 'Enter' && bellSoundEnabledRef.current) {
+        playTypewriterBell(keySoundVolumeRef.current);
+      }
+    }
+  };
 
   const saveConfigCloud = async (updates: Record<string, any>) => {
     if (!user) return;
@@ -396,7 +453,7 @@ export default function DigitalWindow() {
       })
       .catch((err: any) => {
         if (isMounted) {
-          console.error("Redirect sign-in error: ", err);
+          console.warn("Redirect sign-in warning: ", err);
           let friendlyMessage = err?.message || String(err);
           if (err?.code === 'auth/unauthorized-domain') {
             friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
@@ -429,6 +486,63 @@ export default function DigitalWindow() {
     };
   }, []);
 
+  // Secure tab breakout auto-trigger for Google login bypass inside iframes
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const trigger = params.get('auth_trigger');
+    if (!trigger) return;
+
+    if (trigger === 'google_redirect') {
+      // Clear parameter from URL so it doesn't loop infinitely on return redirect
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('auth_trigger');
+      window.history.replaceState({}, '', newUrl.toString());
+
+      setAuthLoading(true);
+      setAuthError(null);
+
+      signInWithRedirect(auth, googleProvider)
+        .catch((err: any) => {
+          console.warn("Auto redirect login warning: ", err);
+          let friendlyMessage = err?.message || String(err);
+          if (err?.code === 'auth/unauthorized-domain') {
+            friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
+          }
+          setAuthError(friendlyMessage);
+          setAuthLoading(false);
+        });
+    } else if (trigger === 'google_popup') {
+      // Clear parameter
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('auth_trigger');
+      window.history.replaceState({}, '', newUrl.toString());
+
+      setAuthLoading(true);
+      setAuthError(null);
+
+      signInWithPopup(auth, googleProvider)
+        .then((result) => {
+          if (result && result.user) {
+            setUser(result.user);
+          }
+        })
+        .catch((err: any) => {
+          console.warn("Auto popup login warning: ", err);
+          let friendlyMessage = err?.message || String(err);
+          if (err?.code === 'auth/unauthorized-domain') {
+            friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
+          }
+          setAuthError(friendlyMessage);
+        })
+        .finally(() => {
+          setAuthLoading(false);
+        });
+    }
+  }, [authLoading, user]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -456,6 +570,15 @@ export default function DigitalWindow() {
         }
         if (data.keySoundProfile !== undefined && data.keySoundProfile !== keySoundProfile) {
           setKeySoundProfile(data.keySoundProfile as any);
+        }
+        if (data.keySoundVolume !== undefined && data.keySoundVolume !== keySoundVolume) {
+          setKeySoundVolume(data.keySoundVolume);
+        }
+        if (data.bellSoundEnabled !== undefined && data.bellSoundEnabled !== bellSoundEnabled) {
+          setBellSoundEnabled(data.bellSoundEnabled);
+        }
+        if (data.showGridBg !== undefined && data.showGridBg !== showGridBg) {
+          setShowGridBg(data.showGridBg);
         }
         if (data.focusMode !== undefined && data.focusMode !== focusMode) {
           setFocusMode(data.focusMode);
@@ -743,9 +866,7 @@ export default function DigitalWindow() {
       },
       handleDOMEvents: {
         keydown: (view, event) => {
-          if (keySoundsEnabledRef.current) {
-            playKeySound(event.key, keySoundProfileRef.current);
-          }
+          playClick(event.key);
           return false;
         }
       }
@@ -1142,7 +1263,7 @@ export default function DigitalWindow() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
-      console.error("Sign-in failed (Popup): ", err);
+      console.warn("Sign-in failed (Popup): ", err);
       let friendlyMessage = err?.message || String(err);
       if (err?.code === 'auth/popup-blocked') {
         friendlyMessage = 'The Google login popup was blocked by your browser/device. Try using the Redirect method below, or allow popups.';
@@ -1165,7 +1286,7 @@ export default function DigitalWindow() {
     try {
       await signInWithRedirect(auth, googleProvider);
     } catch (err: any) {
-      console.error("Sign-in failed (Redirect): ", err);
+      console.warn("Sign-in failed (Redirect): ", err);
       let friendlyMessage = err?.message || String(err);
       if (err?.code === 'auth/unauthorized-domain') {
         friendlyMessage = 'This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ' + window.location.hostname;
@@ -1176,15 +1297,62 @@ export default function DigitalWindow() {
     }
   };
 
+  const handleEmailAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
+    if (!email || !password) {
+      setAuthError('Please fill in both email and password fields.');
+      return;
+    }
+    if (password.length < 6) {
+      setAuthError('Password must be at least 6 characters.');
+      return;
+    }
+    setAuthError(null);
+    setAuthSuccessMessage(null);
+    setAuthActionLoading(true);
+
+    try {
+      if (isSignUp) {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        setUser(userCredential.user);
+        setAuthSuccessMessage('Account created successfully! Welcome.');
+      } else {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        setUser(userCredential.user);
+        setAuthSuccessMessage('Successfully signed in! Accessing web notes...');
+      }
+    } catch (err: any) {
+      console.warn("Email auth failed: ", err);
+      let friendlyMessage = err?.message || String(err);
+      if (err?.code === 'auth/email-already-in-use' || friendlyMessage.includes('auth/email-already-in-use')) {
+        friendlyMessage = 'This email is already in use by another account. Please select sign-in or try another email.';
+      } else if (err?.code === 'auth/wrong-password' || friendlyMessage.includes('auth/wrong-password')) {
+        friendlyMessage = 'Incorrect password. Review your details and try again.';
+      } else if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential' || friendlyMessage.includes('auth/user-not-found') || friendlyMessage.includes('auth/invalid-credential')) {
+        friendlyMessage = 'No account found with these credentials. If you are new, click "Don\'t have a cloud account? Sign Up & Sync" below.';
+      } else if (err?.code === 'auth/invalid-email' || friendlyMessage.includes('auth/invalid-email')) {
+        friendlyMessage = 'The email address format is invalid.';
+      } else if (err?.code === 'auth/weak-password' || friendlyMessage.includes('auth/weak-password')) {
+        friendlyMessage = 'Your password needs to be at least 6 characters.';
+      } else if (err?.code === 'auth/operation-not-allowed' || friendlyMessage.includes('auth/operation-not-allowed')) {
+        friendlyMessage = 'Email/Password sign-in is not enabled in your Firebase Console. Please go to Authentication -> Sign-in method and enable Email/Password.';
+      }
+      setAuthError(friendlyMessage);
+    } finally {
+      setAuthActionLoading(false);
+    }
+  };
+
   const handleSignOut = async () => {
     if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
     try {
       await signOut(auth);
-      setUseLocalSession(false);
-      sessionStorage.removeItem('digital_window_offline_session');
+      setUseLocalSession(true);
+      localStorage.setItem('digital_window_offline_session', 'true');
       setAuthError(null);
     } catch (err) {
-      console.error("Sign-out error: ", err);
+      console.warn("Sign-out error: ", err);
     }
   };
 
@@ -1202,31 +1370,28 @@ export default function DigitalWindow() {
   if (!user && !useLocalSession) {
     const landingBg = isDarkMode ? '#0F0F11' : '#F5F5F7';
     const landingCardBg = isDarkMode ? '#1E1E22' : '#FFFFFF';
+    const authFormBg = isDarkMode ? '#16161A' : '#FAFAFC';
     const landingText = isDarkMode ? '#F5F5F7' : '#111111';
-    const landingDotColor = isDarkMode ? '#ffffff10' : '#11111115';
+    const landingDotColor = isDarkMode ? '#ffffff0b' : '#1111110f';
 
     return (
       <div 
         id="auth-landing-view"
         style={{ 
           backgroundImage: `radial-gradient(${landingDotColor} 3px, transparent 3px)`, 
-          backgroundSize: '32px 32px',
+          backgroundSize: '24px 24px',
           backgroundColor: landingBg,
           color: landingText,
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
-          paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 12px)',
-          paddingRight: 'calc(env(safe-area-inset-right, 0px) + 12px)'
         }}
-        className="w-full h-[100dvh] flex flex-col items-center justify-center transition-colors duration-300 animate-fade-in overflow-y-auto select-none font-sans"
+        className="w-full min-h-[100dvh] flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 transition-colors duration-300 animate-fade-in overflow-y-auto font-sans"
       >
         <div 
           id="auth-landing-card"
-          style={{ backgroundColor: landingCardBg, borderColor: isDarkMode ? '#FFFFFF40' : '#111111' }}
-          className="w-full max-w-[460px] md:max-w-3xl border-[4px] rounded-sm shadow-[8px_8px_0px_#11111126] dark:shadow-[8px_8px_0px_#00000050] p-4 sm:p-8 flex flex-col gap-4 sm:gap-6 text-center relative overflow-hidden transition-all duration-300 my-auto font-sans text-neutral-900 dark:text-neutral-100"
+          style={{ backgroundColor: landingCardBg, borderColor: isDarkMode ? '#3F3F46' : '#111111' }}
+          className="w-full max-w-5xl border-[4px] rounded-sm shadow-[10px_10px_0px_#11111126] dark:shadow-[10px_10px_0px_#00000060] flex flex-col md:grid md:grid-cols-12 items-stretch overflow-hidden relative transition-all duration-300 my-auto"
         >
-          {/* Quick theme control */}
-          <div className="absolute top-3 right-3 z-10">
+          {/* Quick theme control in the corner */}
+          <div className="absolute top-4 right-4 z-20">
             <button 
               id="landing-toggle-theme-btn"
               onClick={() => {
@@ -1234,200 +1399,425 @@ export default function DigitalWindow() {
                 setIsDarkMode(toggled);
                 localStorage.setItem('digital_window_theme', toggled ? 'dark' : 'light');
               }} 
-              className="p-1.5 rounded-sm border-2 border-transparent hover:border-neutral-200 dark:hover:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 transition-all cursor-pointer"
-              title="Toggle theme inside preview"
+              className="p-2 rounded-sm border-2 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-black dark:hover:border-zinc-100 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 transition-all cursor-pointer shadow-sm"
+              title="Toggle theme"
             >
               {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
 
-          {/* Header section */}
-          <div className="flex flex-col gap-2 mt-1 relative z-10">
-            <div 
-              style={{ backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5', borderColor: isDarkMode ? '#FFFFFF22' : '#111111' }}
-              className="mx-auto w-12 h-12 sm:w-16 sm:h-16 border-[3px] border-black flex items-center justify-center font-black rounded-lg shadow-[3px_3px_0px_#11111126] dark:shadow-[3px_3px_0px_#00000045] mb-1 scale-100 relative select-none"
-            >
-              <FileText className="w-6 h-6 sm:w-8 sm:h-8" style={{ stroke: isDarkMode ? '#F5F5F7' : '#111111' }} strokeWidth={2.2} />
-            </div>
+          {/* LEFT SIDE: Brand Identity & Feature Marketing Column */}
+          <div className="md:col-span-7 p-6 sm:p-10 flex flex-col justify-between relative border-b-[4px] md:border-b-0 md:border-r-[4px] border-black/80 dark:border-white/10">
             
-            <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight uppercase leading-none bg-gradient-to-b from-neutral-900 to-neutral-750 dark:from-white dark:to-neutral-300 bg-clip-text">
-              web notes
-            </h1>
-            <p className="font-mono text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-60 flex items-center justify-center gap-1.5">
-              <span>distraction-free plain text editor</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            </p>
-          </div>
+            {/* Branding Header Area */}
+            <div>
+              <div className="flex items-center gap-2.5 mb-6 md:mb-12">
+                <div 
+                  style={{ backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5', borderColor: isDarkMode ? '#FFFFFF22' : '#111111' }}
+                  className="w-10 h-10 border-2 border-black flex items-center justify-center font-black rounded shadow-[2px_2px_0px_#11111126] dark:shadow-[2px_2px_0px_#00000045]"
+                >
+                  <FileText className="w-5 h-5 animate-pulse" style={{ stroke: isDarkMode ? '#F5F5F7' : '#111111' }} strokeWidth={2.2} />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-sm font-black uppercase tracking-widest text-neutral-900 dark:text-neutral-100 leading-none">web notes</span>
+                  <span className="text-[9px] font-mono font-bold text-neutral-450 dark:text-neutral-500 uppercase tracking-wider">distraction-free</span>
+                </div>
+                <span className="text-[9px] font-mono font-bold bg-neutral-200/80 dark:bg-zinc-800 text-neutral-600 dark:text-neutral-400 px-1.5 py-0.5 rounded tracking-wide ml-2 uppercase">v2.1</span>
+              </div>
 
-          <div style={{ backgroundColor: isDarkMode ? '#ffffff10' : '#11111110' }} className="w-full h-px relative z-10" />
-
-          {isInIframe && (
-            <div 
-              id="iframe-auth-warning"
-              style={{
-                borderColor: '#eab308',
-                backgroundColor: isDarkMode ? 'rgba(133, 77, 14, 0.15)' : '#fef9c3' 
-              }}
-              className="text-left border-[2.5px] p-3 rounded-sm relative z-10 text-[11px] leading-normal select-none max-w-2xl mx-auto w-full transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-sans border-amber-500/80"
-            >
-              <div className="flex-1 text-amber-900 dark:text-amber-200">
-                <span className="text-[9px] font-mono text-amber-700 dark:text-amber-450 font-black uppercase tracking-wider block mb-0.5">⚠️ IFRAME PREVIEW AUTHENTICATION WARNING</span>
-                <p className="opacity-90">
-                  Modern web browsers block third-party cookies and partition storage inside previews. This makes Google redirects or popups fail occasionally. For a seamless experience with zero auth issues, please open the notes app in a new tab.
+              {/* Pitch Intro Headline */}
+              <div className="text-left max-w-xl">
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold pb-1 uppercase tracking-tight text-neutral-900 dark:text-white leading-[0.95] mb-4">
+                  Bring sanity back <br />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-500 via-amber-500 to-sky-500 dark:from-teal-400 dark:via-amber-400 dark:to-cyan-400">to your thinking.</span>
+                </h1>
+                
+                <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed mb-6 md:mb-10 font-normal">
+                  Web Notes strip away absolute UI complexity. It combines a pure, distraction-free typography editor with responsive client-side storage, mechanical typing sound profiles, and live web synchronizing.
                 </p>
               </div>
-              <a 
-                href={window.location.href} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                onClick={() => {
-                  if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
-                }}
-                className="px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider bg-amber-500 hover:bg-amber-600 dark:bg-amber-550 dark:hover:bg-amber-500 text-black border-2 border-black rounded-sm shadow-[2px_2px_0px_rgba(0,0,0,0.15)] hover:shadow-[3px_3px_0px_rgba(0,0,0,0.2)] transition-all shrink-0 select-none cursor-pointer flex items-center gap-1.5"
-                title="Breakout of the preview frame"
-              >
-                <span>Open App in New Tab</span>
-                <Maximize className="w-3.5 h-3.5 shrink-0" />
-              </a>
-            </div>
-          )}
 
-          {/* Setup / choice grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left max-w-2xl mx-auto w-full relative z-10">
-            
-            {/* Option A: Cloud Space */}
-            <div 
-              id="cloud-option-card"
-              style={{ borderColor: isDarkMode ? '#ffffff15' : '#E4E4E7' }}
-              className="flex flex-col p-4 border-[2.5px] rounded-sm hover:border-black dark:hover:border-white/35 transition-all duration-200"
-            >
-              <span className="text-[10px] font-mono uppercase tracking-widest text-[#ef4444] font-black mb-1">RECOMMENDED</span>
-              <h3 className="text-sm font-black uppercase tracking-wide mb-1 leading-snug">Cloud Save & Sync</h3>
-              <p className="text-[11px] leading-relaxed opacity-60 mb-4 flex-grow">
-                Securely back up your writing to Google Cloud. Keep all your notes saved automatically and beautifully in sync in real-time across your desktop, laptop, and mobile devices.
-              </p>
-
-              <div className="flex flex-col gap-3.5 mt-auto">
-                <div className="flex flex-col gap-1.5">
-                  <button
-                    id="landing-signin-redirect-btn"
-                    onClick={handleSignInRedirect}
-                    style={{
-                      backgroundColor: '#3b82f6',
-                      color: '#ffffff',
-                      borderWidth: '2px',
-                      borderColor: 'black'
-                    }}
-                    className="w-full py-2.5 text-xs font-black transition-all shadow-[2.5px_2.5px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3.5px_3.5px_0px_#000] active:translate-y-px active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer rounded-sm"
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                    </svg>
-                    <span>Google Sign In (Redirect)</span>
-                  </button>
+              {/* Minimal bullet checklist */}
+              <div className="flex flex-col gap-4 text-left max-w-xl mb-8">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 w-6 h-6 flex items-center justify-center rounded bg-emerald-500/15 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0 border border-emerald-500/20">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-neutral-900 dark:text-neutral-100">Automatic Sync Options</h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-normal">
+                      Every single punctuation is persisted in real-time. Access, review, and edit across all developer boxes.
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <button
-                    id="landing-signin-popup-btn"
-                    onClick={handleSignInPopup}
-                    style={{
-                      backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5',
-                      color: isDarkMode ? '#F5F5F7' : '#111111',
-                      borderWidth: '2px',
-                      borderColor: 'black'
-                    }}
-                    className="w-full py-2 text-xs font-black transition-all shadow-[2px_2px_0px_#11111126] dark:shadow-[2px_2px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3px_3px_0px_#11111126] active:translate-y-px active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer rounded-sm"
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                    </svg>
-                    <span>Google Sign In (Popup)</span>
-                  </button>
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 w-6 h-6 flex items-center justify-center rounded bg-blue-500/15 dark:bg-blue-500/10 text-blue-600 dark:text-sky-400 shrink-0 border border-blue-500/20">
+                    <Shield className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-neutral-900 dark:text-neutral-100">Private Offline Workspaces</h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-normal">
+                      Write completely local manually. No registration or server storage path needed to sandbox your thinking.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 w-6 h-6 flex items-center justify-center rounded bg-amber-500/15 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0 border border-amber-500/20">
+                    <Keyboard className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-neutral-900 dark:text-neutral-100">Acoustic Feedback System</h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-normal">
+                      Turn on responsive vintage typing clicking. Enjoy mechanical thocks right inside your key inputs.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Option B: Local Space */}
-            <div 
-              id="local-option-card"
-              style={{ borderColor: isDarkMode ? '#ffffff15' : '#E4E4E7' }}
-              className="flex flex-col p-4 border-[2.5px] rounded-sm hover:border-black dark:hover:border-white/35 transition-all duration-200"
-            >
-              <span className="text-[10px] font-mono uppercase tracking-widest text-[#22c55e] font-black mb-1">100% PRIVATE</span>
-              <h3 className="text-sm font-black uppercase tracking-wide mb-1 leading-snug">Local Offline Sandbox</h3>
-              <p className="text-[11px] leading-relaxed opacity-60 mb-4 flex-grow">
-                Write completely privately. Your documents remain cached exclusively inside your local browser memory sandbox and never touch the cloud. No setup or accounts required.
-              </p>
+            {/* Offline Sandbox Bottom Row */}
+            <div className="mt-6 md:mt-12 border-t border-neutral-200 dark:border-neutral-800 pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="max-w-xs text-left">
+                <h4 className="text-[10px] font-black uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-0.5">anonymous local mode</h4>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
+                  Skip the setup. Work completely cached inside your local browser memory database.
+                </p>
+              </div>
 
               <button
                 id="landing-use-local-btn"
+                type="button"
                 onClick={() => {
                   if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
                   setUseLocalSession(true);
-                  sessionStorage.setItem('digital_window_offline_session', 'true');
+                  localStorage.setItem('digital_window_offline_session', 'true');
                 }}
-                className={`w-full mt-auto py-2.5 text-xs font-black border-[2.5px] transition-all rounded-sm uppercase tracking-wider cursor-pointer ${
+                className={`px-5 py-2.5 text-xs font-black border-[2px] transition-all rounded-sm uppercase tracking-wider shadow-[3px_3px_0px_#00000015] dark:shadow-[3px_3px_0px_#00000060] hover:-translate-y-px active:translate-y-px active:shadow-[1px_1px_0px_#000] cursor-pointer text-center text-xs shrink-0 ${
                   isDarkMode 
-                    ? 'text-neutral-300 hover:bg-white hover:text-black hover:border-white border-neutral-700' 
-                    : 'text-neutral-900 hover:bg-black hover:text-white hover:border-black border-neutral-300'
+                    ? 'text-neutral-300 hover:bg-neutral-800 hover:text-white border-neutral-700 bg-neutral-900' 
+                    : 'text-neutral-900 hover:bg-neutral-50 hover:text-black border-neutral-300 bg-white'
                 }`}
               >
-                Launch Local Sandbox
+                Launch Offline Sandbox
               </button>
             </div>
 
           </div>
 
-          {/* Connection Error Diagnostic Output */}
-          {authError && (
-            <div id="landing-auth-error" style={{ borderColor: '#ef4444' }} className="text-left border-[3px] bg-red-400/5 dark:bg-red-950/10 text-red-700 dark:text-red-400 p-3 rounded-sm text-[11px] max-w-xl mx-auto w-full">
-              <span className="font-extrabold uppercase block mb-1">⚠️ Security Connection Issue Details:</span>
-              <p className="font-mono leading-tight text-[10.5px] mb-1.5 break-all">{authError}</p>
-              
-              {authError.includes('Authorized Domain') && (
-                <div className="mt-2.5 border-t border-red-500/20 pt-2 flex flex-col gap-1.5 font-sans">
-                  <span className="font-extrabold text-[9px]">FIREBASE AUTH DOMAINS LIST ENFORCEMENT:</span>
-                  <code className="bg-neutral-100 dark:bg-neutral-900 px-2 py-1 rounded text-[10px] select-all font-mono border border-black/10 dark:border-white/10 text-center text-red-600 dark:text-red-400 font-extrabold">
-                    {window.location.hostname}
-                  </code>
-                  <a 
-                    href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="underline text-[10px] font-extrabold text-blue-600 dark:text-sky-450 block text-center"
-                  >
-                    {"Configure Firebase Authentication -> Authorized Domains ↗"}
-                  </a>
-                </div>
-              )}
+          {/* RIGHT SIDE: Dedicated Auth Card & Form Section */}
+          <div 
+            style={{ backgroundColor: authFormBg }}
+            className="md:col-span-5 p-6 sm:p-8 flex flex-col justify-between text-left relative"
+          >
+            <div>
+              {/* Box Headline */}
+              <div className="mb-6">
+                <span className="text-[9px] font-mono font-black text-rose-500 dark:text-rose-450 uppercase tracking-widest block mb-1">CLOUD STORAGE CAPABILITIES</span>
+                <h2 className="text-xl font-bold uppercase tracking-tight text-neutral-900 dark:text-white flex items-center gap-1.5 leading-none">
+                  <span>Secure Cloud Sync</span>
+                </h2>
+                <p className="text-[11px] text-neutral-500 dark:text-zinc-500 leading-snug mt-1.5">
+                  Sign in or register an account to back up notes securely in our real-time Google Cloud setup.
+                </p>
+              </div>
 
-              {(authError.includes('not enabled') || authError.includes('operation-not-allowed')) && (
-                <div className="mt-2.5 border-t border-red-500/20 pt-2 flex flex-col gap-1.5 font-sans">
-                  <span className="font-extrabold text-[9px]">FIREBASE AUTH PROVIDER ENFORCEMENT:</span>
-                  <p className="text-[10px] opacity-75 leading-normal mb-1">
-                    Google Sign-In has not been enabled in your Firebase project. Go to your Firebase Console under Authentication to enable Google as a sign-in provider.
-                  </p>
-                  <a 
-                    href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="underline text-[10px] font-extrabold text-blue-600 dark:text-sky-450 block text-center"
-                  >
-                    {"Configure Firebase Authentication -> Add Google Provider ↗"}
-                  </a>
+              {/* Login Tabs Selector */}
+              <div className="grid grid-cols-2 gap-1 p-1 rounded bg-neutral-200/50 dark:bg-zinc-950/60 border border-neutral-300/40 dark:border-neutral-800/80 mb-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                    setActiveAuthTab('email');
+                    setAuthError(null);
+                  }}
+                  className={`text-[9.5px] font-mono font-black uppercase tracking-wider py-1.5 rounded transition-all cursor-pointer text-center ${
+                    activeAuthTab === 'email'
+                      ? 'bg-neutral-900 dark:bg-zinc-800 text-white dark:text-white shadow-sm font-black'
+                      : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-300'
+                  }`}
+                >
+                  Email & Password
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                    setActiveAuthTab('google');
+                    setAuthError(null);
+                  }}
+                  className={`text-[9.5px] font-mono font-black uppercase tracking-wider py-1.5 rounded transition-all cursor-pointer text-center ${
+                    activeAuthTab === 'google'
+                      ? 'bg-neutral-900 dark:bg-zinc-800 text-white dark:text-white shadow-sm font-black'
+                      : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-300'
+                  }`}
+                >
+                  Google OAuth
+                </button>
+              </div>
+
+              {/* ACTIVE TAB VIEWS */}
+              {activeAuthTab === 'email' ? (
+                /* Tab 1: Email & Password Form */
+                <form onSubmit={handleEmailAuthSubmit} className="flex flex-col gap-3 text-left">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-mono uppercase tracking-wider font-extrabold opacity-75 text-neutral-700 dark:text-zinc-400">
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@domain.com"
+                      className="w-full bg-white dark:bg-neutral-900 border-[2px] border-neutral-300 dark:border-neutral-800 hover:border-neutral-900 dark:hover:border-zinc-300 rounded px-2.5 py-2 text-xs font-sans text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white transition-all shadow-[2px_2px_0px_rgba(0,0,0,0.05)]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-mono uppercase tracking-wider font-extrabold opacity-75 text-neutral-700 dark:text-zinc-400">
+                      Password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-white dark:bg-neutral-900 border-[2px] border-neutral-300 dark:border-neutral-800 hover:border-neutral-900 dark:hover:border-zinc-300 rounded px-2.5 py-2 text-xs font-sans text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white transition-all shadow-[2px_2px_0px_rgba(0,0,0,0.05)]"
+                    />
+                  </div>
+
+                  {authSuccessMessage && (
+                    <div className="text-[10px] text-emerald-600 dark:text-emerald-450 font-mono font-medium block animate-fade-in py-1">
+                      ✓ {authSuccessMessage}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2 mt-2">
+                    <button
+                      type="submit"
+                      disabled={authActionLoading}
+                      style={{
+                        backgroundColor: isDarkMode ? '#FFFFFF' : '#111111',
+                        color: isDarkMode ? '#111111' : '#FFFFFF',
+                        borderWidth: '2px',
+                        borderColor: 'black'
+                      }}
+                      className="w-full py-2.5 text-xs font-black transition-all shadow-[2.5px_2.5px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3.5px_3.5px_0px_#000] active:translate-y-px active:shadow-[1px_1px_0px_#000] disabled:opacity-50 uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer rounded-sm"
+                    >
+                      {authActionLoading ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent animate-spin rounded-full" />
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <span>{isSignUp ? 'Create Cloud Account' : 'Sign In To Cloud'}</span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                        setIsSignUp(!isSignUp);
+                        setAuthError(null);
+                        setAuthSuccessMessage(null);
+                      }}
+                      className="text-center text-[10px] underline hover:opacity-100 opacity-60 font-mono tracking-wide py-1 text-neutral-600 dark:text-zinc-400 cursor-pointer block"
+                    >
+                      {isSignUp ? 'Already have a cloud account? Sign In' : "Don't have a cloud account? Sign Up & Sync"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* Tab 2: Google Authentication (Redirect / Popup) */
+                <div className="flex flex-col gap-3 mt-1">
+                  {isInIframe && (
+                    <div className="flex flex-col gap-2 p-3 bg-[#e0f2fe]/40 dark:bg-sky-950/20 border-[2px] border-[#bae6fd] dark:border-sky-900/30 rounded mb-2 text-left animate-fade-in">
+                      <span className="text-[10px] font-mono font-black text-sky-750 dark:text-sky-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-blue-500" />
+                        Recommended Tab Breakout
+                      </span>
+                      <p className="text-[10.5px] text-neutral-600 dark:text-zinc-400 leading-normal font-sans">
+                        Private/ordinary browsers block third-party cookies inside preview iframes. Break out to a fresh secure tab to log in instantly.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
+                          const loginUrl = new URL(window.location.href);
+                          loginUrl.searchParams.set('auth_trigger', 'google_redirect');
+                          window.open(loginUrl.toString(), '_blank');
+                        }}
+                        className="w-full mt-1.5 py-2 px-3 bg-blue-500 text-white font-black text-[10.5px] uppercase tracking-wider rounded border-[2px] border-black hover:bg-blue-600 active:translate-y-px transition-all shadow-[2px_2px_0px_#000] cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                        <span>Breakout & Auto-Sign-In</span>
+                      </button>
+                    </div>
+                  )}
+
+                  <span className="text-[10.5px] text-neutral-500 dark:text-zinc-550 leading-normal block mb-1">
+                    {isInIframe 
+                      ? "Or, attempt direct authentication inline (typically blocked in incognito/private windows):" 
+                      : "Authenticate instantly with your Google Account credential path."}
+                  </span>
+                  
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        id="landing-signin-redirect-btn"
+                        onClick={handleSignInRedirect}
+                        style={{
+                          backgroundColor: '#3b82f6',
+                          color: '#ffffff',
+                          borderWidth: '2px',
+                          borderColor: 'black'
+                        }}
+                        className="w-full py-2.5 text-xs font-black transition-all shadow-[2.5px_2.5px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3.5px_3.5px_0px_#000] active:translate-y-px active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer rounded-sm"
+                      >
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                        </svg>
+                        <span>Google Sign In (Redirect)</span>
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        id="landing-signin-popup-btn"
+                        onClick={handleSignInPopup}
+                        style={{
+                          backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5',
+                          color: isDarkMode ? '#F5F5F7' : '#111111',
+                          borderWidth: '2px',
+                          borderColor: 'black'
+                        }}
+                        className="w-full py-2.5 text-xs font-black transition-all shadow-[2px_2px_0px_#11111126] dark:shadow-[2px_2px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3px_3px_0px_#11111126] active:translate-y-px active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer rounded-sm"
+                      >
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                        </svg>
+                        <span>Google Sign In (Popup)</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
-          )}
 
+            {/* ERROR DIAGNOSTICS: Positioned elegantly inside the interactive right pane */}
+            {authError && (
+              <div id="landing-auth-error" style={{ borderColor: '#ef4444' }} className="text-left border-[2.5px] bg-red-400/5 dark:bg-red-950/10 text-red-700 dark:text-red-400 p-3 rounded-sm text-[11px] w-full mt-4 animate-fade-in font-mono">
+                <span className="font-extrabold uppercase block mb-1">⚠️ Security Connection Issue Details:</span>
+                <p className="leading-tight text-[10.5px] mb-1.5 break-all">{authError}</p>
+                
+                {authError.includes('Authorized Domain') && (
+                  <div className="mt-2 text-neutral-500 font-sans border-t border-red-500/20 pt-2 flex flex-col gap-1.5">
+                    <span className="font-extrabold text-[9px]">AUTHORIZED DOMAINS LIST ENFORCEMENT:</span>
+                    <code className="bg-neutral-100 dark:bg-neutral-900/60 px-2 py-1 rounded text-[10px] select-all font-mono border border-black/10 dark:border-white/10 text-center text-red-650 dark:text-red-400 font-bold">
+                      {window.location.hostname}
+                    </code>
+                    <a 
+                      href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="underline text-[10px] font-extrabold text-blue-600 dark:text-sky-400 block text-center"
+                    >
+                      Configure Firebase Auth Settings ↗
+                    </a>
+                                 {(authError.includes('email-already-in-use') || authError.includes('already in use')) && (
+                  <div className="mt-2 text-neutral-500 font-sans border-t border-red-500/20 pt-2 flex flex-col gap-1.5">
+                    <span className="font-extrabold text-[9px] text-red-600 dark:text-red-400">EMAIL ALREADY EXISTS:</span>
+                    <p className="text-[10px] opacity-75 leading-normal mb-1">
+                      This email address is already registered. If you already have an account, click the button below to switch to the Sign In screen and enter your password.
+                    </p>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                        setIsSignUp(false);
+                        setAuthError(null);
+                        setAuthSuccessMessage(null);
+                      }}
+                      className="px-2.5 py-1.5 bg-neutral-100 dark:bg-neutral-800 border-2 border-black dark:border-zinc-700 font-black text-[9px] uppercase tracking-wider rounded text-neutral-800 dark:text-neutral-200 cursor-pointer self-center hover:-translate-y-px transition-all shadow-[1.5px_1.5px_0px_#000]"
+                    >
+                      Switch to Sign In instead ➜
+                    </button>
+                  </div>
+                )}
 
+                {(authError.includes('Email/Password') || authError.includes('enable Email/Password') || (authError.includes('operation-not-allowed') && activeAuthTab === 'email')) && (
+                  <div className="mt-2 text-neutral-500 font-sans border-t border-red-500/20 pt-2 flex flex-col gap-1.5">
+                    <span className="font-extrabold text-[9px] text-red-600 dark:text-red-400">EMAIL/PASSWORD SIGN-IN IS DISABLED:</span>
+                    <p className="text-[10px] opacity-75 leading-normal mb-1">
+                      Email and Password authentication is currently disabled in your Firebase project. Under Build ➜ Authentication ➜ Sign-in method, click "Add new provider", select "Email/Password", enable it, and save.
+                    </p>
+                    <a 
+                      href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="underline text-[10.5px] font-extrabold text-blue-650 dark:text-sky-400 block text-center"
+                    >
+                      Enable Email/Password sign-in in Firebase Console ↗
+                    </a>
+                  </div>
+                )}
+
+                {((authError.includes('Google') || authError.includes('google')) && (authError.includes('not enabled') || authError.includes('operation-not-allowed') || (authError.includes('operation-not-allowed') && activeAuthTab === 'google'))) && (
+                  <div className="mt-2 text-neutral-500 font-sans border-t border-red-500/20 pt-2 flex flex-col gap-1.5">
+                    <span className="font-extrabold text-[9px] text-red-600 dark:text-red-400">GOOGLE SIGN-IN IS DISABLED:</span>
+                    <p className="text-[10px] opacity-75 leading-normal mb-1">
+                      Google Sign-In has not been enabled in your Firebase project. Go to your Firebase Console under Authentication ➜ Sign-in method to enable Google as a sign-in provider.
+                    </p>
+                    <a 
+                      href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="underline text-[10.5px] font-extrabold text-blue-650 dark:text-sky-450 block text-center"
+                    >
+                      Enable Google Sign-In in Firebase Console ↗
+                    </a>
+                  </div>
+                )}     </div>
+                )}
+              </div>
+            )}
+
+            {/* Iframe Hint inside the right console card wrapper */}
+            {isInIframe && (
+              <div 
+                id="iframe-auth-warning"
+                className="mt-4 border-t border-dashed border-neutral-300 dark:border-neutral-800 pt-3 text-left z-10 text-[10.5px] select-none w-full transition-all flex flex-col justify-between gap-2.5 font-sans"
+              >
+                <p className="opacity-60 leading-normal">
+                  iFrame cookies blocks can sometimes affect login status. Open the application directly in a fresh tab to guarantee uninterrupted service.
+                </p>
+                <a 
+                  href={window.location.href} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
+                  }}
+                  className="px-3.5 py-2 text-[10px] font-black uppercase text-center tracking-wider bg-transparent hover:bg-neutral-100 dark:hover:bg-zinc-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-700 rounded-sm transition-all select-none cursor-pointer flex items-center justify-center gap-1.5"
+                  title="Breakout of the preview frame"
+                >
+                  <span>Open App in New Tab</span>
+                  <Maximize className="w-3.5 h-3.5 shrink-0" />
+                </a>
+              </div>
+            )}
+
+          </div>
 
         </div>
       </div>
@@ -1444,7 +1834,7 @@ export default function DigitalWindow() {
     <div 
       onContextMenu={handleContextMenu}
       style={{ 
-        backgroundImage: `radial-gradient(${themeModeSettings.text}10 3px, transparent 3px)`, 
+        backgroundImage: showGridBg ? `radial-gradient(${themeModeSettings.text}10 3px, transparent 3px)` : 'none', 
         backgroundSize: '32px 32px',
         backgroundColor: themeModeSettings.bg,
         color: themeModeSettings.text
@@ -1453,7 +1843,8 @@ export default function DigitalWindow() {
     >
       <style>{`
         /* Dynamic Theme Palette Override Stylesheet */
-        
+
+
         /* 1. Force retro elements to use active theme's matching text color with low opacity, creating softer lines */
         .border-black,
         .border-r-black,
@@ -1630,7 +2021,7 @@ export default function DigitalWindow() {
 
                   {/* Settings Tab Selector */}
                   <div className="flex border-[3px] border-black p-0.5 bg-neutral-100 dark:bg-neutral-900 shadow-[2px_2px_0px_#000] flex-shrink-0 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
-                    {(['display', 'themes', 'cloud'] as const).map(tab => (
+                    {(['display', 'themes'] as const).map(tab => (
                       <button
                         key={tab}
                         onClick={() => setSettingsTab(tab)}
@@ -1648,7 +2039,6 @@ export default function DigitalWindow() {
                       >
                         {tab === 'display' && <Eye size={12} />}
                         {tab === 'themes' && <Sun size={12} />}
-                        {tab === 'cloud' && <Clock size={12} />}
                         <span className="uppercase">{tab}</span>
                       </button>
                     ))}
@@ -1748,6 +2138,35 @@ export default function DigitalWindow() {
                           </button>
                         </div>
 
+                        {/* Show Grid Backdrop */}
+                        <div className="flex items-center justify-between w-full p-3 sm:p-4 border-[3px] border-black rounded-sm bg-black/5 relative">
+                          <div className="flex flex-col text-left pr-2 flex-1 min-w-0">
+                            <span className="uppercase text-xs font-black tracking-wider leading-tight">Dotted Grid</span>
+                            <span className="text-[10px] font-sans tracking-wide font-medium opacity-60 leading-normal mt-0.5">DISPLAY EXPERIMENTAL GEOMETRIC DOT PATTERN IN BACKGROUND</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowGridBg(prev => !prev);
+                              playClick('Space');
+                            }}
+                            style={{
+                              backgroundColor: showGridBg ? themeModeSettings.activeNoteBg : themeModeSettings.sidebarBg,
+                            }}
+                            className="w-12 h-[26px] border-[3px] border-black flex items-center p-[2px] cursor-pointer rounded-sm transition-colors duration-150 select-none shadow-[1.5px_1.5px_0px_#000] active:translate-x-[0.5px] active:translate-y-[0.5px] active:shadow-[1px_1px_0px_#000]"
+                            title={`Turn backdrop grid ${showGridBg ? 'OFF' : 'ON'}`}
+                          >
+                            <motion.div 
+                              layout
+                              style={{
+                                backgroundColor: showGridBg ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                              }}
+                              className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
+                              animate={{ x: showGridBg ? 20 : 0 }}
+                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                            />
+                          </button>
+                        </div>
+
                         {/* Font Style Section */}
                         <div className="flex flex-col gap-1.5 mt-2">
                           <span className="text-xs uppercase tracking-wider font-black px-1 opacity-80">editor font options</span>
@@ -1755,7 +2174,10 @@ export default function DigitalWindow() {
                             {(['sans', 'mono', 'serif'] as const).map(f => (
                               <button
                                 key={f}
-                                onClick={() => setFontPreference(f)}
+                                onClick={() => {
+                                  setFontPreference(f);
+                                  playClick('Space');
+                                }}
                                 style={fontPreference === f ? {
                                   backgroundColor: themeModeSettings.activeNoteBg,
                                   color: themeModeSettings.activeNoteText,
@@ -1776,6 +2198,8 @@ export default function DigitalWindow() {
                             ))}
                           </div>
                         </div>
+
+
                       </motion.div>
                     )}
 
@@ -1856,7 +2280,7 @@ export default function DigitalWindow() {
                                 const nextState = !keySoundsEnabled;
                                 setKeySoundsEnabled(nextState);
                                 if (nextState) {
-                                  playKeySound('Space', keySoundProfile);
+                                  playKeySound('Space', keySoundProfile, keySoundVolume);
                                 }
                               }}
                               style={{
@@ -1879,159 +2303,106 @@ export default function DigitalWindow() {
 
                           {/* Sound Profile Selectors */}
                           {keySoundsEnabled && (
-                            <div 
-                              style={{ backgroundColor: themeModeSettings.cardBg }} 
-                              className="grid grid-cols-2 gap-1 border-[3px] border-black p-1 w-[92%] mx-auto mt-0.5"
-                            >
-                              <button
-                                onClick={() => setKeySoundProfile('thocky')}
-                                style={
-                                  keySoundProfile === 'thocky'
-                                    ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
-                                    : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
-                                }
-                                className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 transition-all cursor-pointer`}
-                                title="Play soft, creamy mechanical thocks"
+                            <>
+                              <div 
+                                style={{ backgroundColor: themeModeSettings.cardBg }} 
+                                className="grid grid-cols-2 gap-1 border-[3px] border-black p-1 w-[92%] mx-auto mt-0.5 animate-fade-in"
                               >
-                                Soft Thocky
-                              </button>
-                              <button
-                                onClick={() => setKeySoundProfile('mechanical')}
-                                style={
-                                  keySoundProfile === 'mechanical'
-                                    ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
-                                    : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
-                                }
-                                className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 transition-all cursor-pointer`}
-                                title="Play crisp clacky mechanical typing sounds"
-                              >
-                                Mechanical
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {settingsTab === 'cloud' && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex flex-col gap-3"
-                      >
-                        {/* Cloud Storage Account */}
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-xs uppercase tracking-wider font-extrabold px-1 opacity-80">Cloud Backup Sync</span>
-                          {user ? (
-                            <div style={{ backgroundColor: themeModeSettings.cardBg }} className="flex flex-col gap-3 p-3 border-[3px] border-black">
-                              <div className="flex items-center gap-3">
-                                {user.photoURL ? (
-                                  <img src={user.photoURL} alt={user.displayName || ''} className="w-8 h-8 rounded-full border border-black/20" referrerPolicy="no-referrer" />
-                                ) : (
-                                  <div className="w-8 h-8 rounded-full bg-neutral-200 border border-black/20 flex items-center justify-center font-black text-xs uppercase text-neutral-700">
-                                    {user.email?.charAt(0) || 'U'}
-                                  </div>
-                                )}
-                                <div className="flex flex-col min-w-0">
-                                  <span className="text-xs font-black uppercase truncate">{user.displayName || 'Authorized User'}</span>
-                                  <span className="text-[10px] font-mono opacity-60 truncate">{user.email}</span>
-                                </div>
+                                <button
+                                  onClick={() => {
+                                    setKeySoundProfile('thocky');
+                                    playKeySound('Space', 'thocky', keySoundVolume);
+                                  }}
+                                  style={
+                                    keySoundProfile === 'thocky'
+                                      ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
+                                      : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
+                                  }
+                                  className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 transition-all cursor-pointer`}
+                                  title="Play soft, creamy mechanical thocks"
+                                >
+                                  Soft Thocky
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setKeySoundProfile('mechanical');
+                                    playKeySound('Space', 'mechanical', keySoundVolume);
+                                  }}
+                                  style={
+                                    keySoundProfile === 'mechanical'
+                                      ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText, borderColor: themeModeSettings.activeNoteBg }
+                                      : { backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.cardText, borderColor: 'transparent' }
+                                  }
+                                  className={`py-1.5 text-[10px] font-black uppercase tracking-wider border-2 hover:border-black/40 transition-all cursor-pointer`}
+                                  title="Play crisp clacky mechanical typing sounds"
+                                >
+                                  Mechanical
+                                </button>
                               </div>
-                              <button
-                                onClick={handleSignOut}
-                                className="w-full py-1.5 border-2 border-red-500 hover:bg-red-500 hover:text-white font-black text-[10px] uppercase tracking-wider transition-colors cursor-pointer rounded-sm"
-                              >
-                                DISCONNECT CLOUD BACKUP
-                              </button>
-                            </div>
-                          ) : (
-                            <div style={{ backgroundColor: themeModeSettings.cardBg }} className="flex flex-col gap-2 p-3 border-[3px] border-black text-center">
-                              <p className="text-[10px] font-bold opacity-60 uppercase">
-                                {useLocalSession ? 'Using Local Sandbox' : 'Cloud Sync is inactive.'}
-                              </p>
-                              
-                              <div className="flex flex-col gap-2.5 mt-1.5">
-                                <button
-                                  onClick={handleSignInRedirect}
-                                  style={{ backgroundColor: '#2563eb', color: '#ffffff' }}
-                                  className="w-full py-1.5 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[2px_2px_0px_#000] active:translate-y-[1px] hover:opacity-95 cursor-pointer flex items-center justify-center gap-1.5 rounded-sm"
-                                >
-                                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm text-black">
-                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                                  </svg>
-                                  Google Redirect (Universal)
-                                </button>
-                                
-                                <button
-                                  onClick={handleSignInPopup}
-                                  style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
-                                  className="w-full py-1.5 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[2px_2px_0px_#000] active:translate-y-[1px] hover:opacity-90 cursor-pointer flex items-center justify-center gap-1.5 rounded-sm"
-                                >
-                                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm text-black">
-                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                                  </svg>
-                                  Google Popup (Direct)
-                                </button>
-                                
-                                {useLocalSession && (
-                                  <button
-                                    onClick={() => {
-                                      if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
-                                      setUseLocalSession(false);
-                                      sessionStorage.removeItem('digital_window_offline_session');
+
+                              {/* Volume Level Slider */}
+                              <div className="flex flex-col gap-1 w-[92%] mx-auto mt-3 animate-fade-in">
+                                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider opacity-80 px-0.5">
+                                  <span>Volume Level</span>
+                                  <span className="font-mono">{Math.round(keySoundVolume * 100)}%</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={keySoundVolume}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value);
+                                      setKeySoundVolume(val);
+                                      playKeySound('Space', keySoundProfile, val);
                                     }}
-                                    className="w-full py-1.5 mt-1 border-2 border-dashed border-red-500 hover:border-solid hover:bg-red-500 hover:text-white dark:hover:text-black dark:hover:bg-red-400 font-black text-[10px] uppercase tracking-wider transition-all cursor-pointer rounded-sm"
-                                  >
-                                    Return to Login
-                                  </button>
-                                )}
+                                    className="flex-1 accent-black h-4 border-[3px] border-black bg-neutral-200 dark:bg-neutral-800 rounded-none cursor-pointer outline-none"
+                                  />
+                                </div>
                               </div>
 
-                              {authError && (
-                                <div className="mt-2 text-left border-2 border-red-500 bg-red-500/10 text-red-600 dark:text-red-400 p-2 rounded-sm text-[9px] leading-snug">
-                                  <span className="font-extrabold uppercase block mb-0.5">⚠️ Connection issue:</span>
-                                  <p className="font-mono text-[8.5px] break-words">{authError}</p>
-                                  
-                                  {authError.includes('Authorized Domain') && (
-                                    <div className="mt-1 border-t border-red-500/20 pt-1 flex flex-col gap-1 font-sans">
-                                      <span className="font-extrabold text-[8px] opacity-75">ADD THIS DOMAIN IN FIREBASE:</span>
-                                      <code className="bg-neutral-100 dark:bg-neutral-900 px-1 py-0.5 rounded text-[8px] break-all select-all font-mono border border-black/10 text-center font-bold text-red-600 dark:text-red-400">
-                                        {window.location.hostname}
-                                      </code>
-                                    </div>
-                                  )}
+                              {/* Typewriter Bell Toggle */}
+                              <div className="flex items-center justify-between w-full p-3 sm:p-4 border-[3px] border-black rounded-sm bg-black/5 relative mt-3 animate-fade-in">
+                                <div className="flex flex-col text-left pr-2 flex-1 min-w-0">
+                                  <span className="uppercase text-xs font-black tracking-wider leading-tight">Return Bell Sound</span>
+                                  <span className="text-[10px] font-sans tracking-wide font-medium opacity-60 leading-normal mt-0.5">PLAYS A METALLIC RING UPON ENTER KEY PRESS</span>
                                 </div>
-                              )}
-                            </div>
+                                <button
+                                  onClick={() => {
+                                    const nextState = !bellSoundEnabled;
+                                    setBellSoundEnabled(nextState);
+                                    if (nextState) {
+                                      playTypewriterBell(keySoundVolume);
+                                    } else {
+                                      playClick('Space');
+                                    }
+                                  }}
+                                  style={{
+                                    backgroundColor: bellSoundEnabled ? themeModeSettings.activeNoteBg : themeModeSettings.sidebarBg,
+                                  }}
+                                  className="w-12 h-[26px] border-[3px] border-black flex items-center p-[2px] cursor-pointer rounded-sm transition-colors duration-150 select-none shadow-[1.5px_1.5px_0px_#000] active:translate-x-[0.5px] active:translate-y-[0.5px] active:shadow-[1px_1px_0px_#000]"
+                                  title={`Turn return bell ${bellSoundEnabled ? 'OFF' : 'ON'}`}
+                                >
+                                  <motion.div 
+                                    layout
+                                    style={{
+                                      backgroundColor: bellSoundEnabled ? themeModeSettings.activeNoteText : themeModeSettings.cardText,
+                                    }}
+                                    className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
+                                    animate={{ x: bellSoundEnabled ? 20 : 0 }}
+                                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                  />
+                                </button>
+                              </div>
+                            </>
                           )}
-                        </div>
-
-                        {/* Export Active Note Button Block style */}
-                        <div className="flex flex-col gap-1.5 mt-2 border-t-[3px] border-black/10 dark:border-white/10 pt-2.5">
-                          <span className="text-xs uppercase tracking-wider font-extrabold px-1 opacity-80">Active Note Backup</span>
-                          <button
-                            onClick={exportNoteAsTxt}
-                            style={{
-                              backgroundColor: themeModeSettings.activeNoteBg,
-                              color: themeModeSettings.activeNoteText
-                            }}
-                            className={`flex items-center justify-between w-full p-3 font-bold border-[3px] border-black ${funkyTransition} ${funkyShadow} ${funkyActive}`}
-                            title="Save current note to device as a TXT file"
-                          >
-                            <span className="uppercase text-xs tracking-wider font-extrabold flex-1 text-left">Export Note (.txt)</span>
-                            <div className="flex items-center justify-center p-0.5">
-                              <Download size={16} />
-                            </div>
-                          </button>
                         </div>
                       </motion.div>
                     )}
+
+
                   </div>
                 </div>
 
@@ -2100,9 +2471,7 @@ export default function DigitalWindow() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       onKeyDown={(e) => {
-                        if (keySoundsEnabledRef.current) {
-                          playKeySound(e.key, keySoundProfileRef.current);
-                        }
+                        playClick(e.key);
                       }}
                       style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
                       className="w-full pl-10 pr-9 py-2.5 font-mono text-xs font-black uppercase tracking-wider border-[3px] border-black placeholder:text-black/40 dark:placeholder:text-[#F4F4F5]/40 focus:outline-none focus:ring-0 transition-colors duration-75"
@@ -2315,9 +2684,7 @@ export default function DigitalWindow() {
                value={activeNote.title}
                onChange={(e) => updateActiveNote({ title: e.target.value })}
                onKeyDown={(e) => {
-                 if (keySoundsEnabledRef.current) {
-                   playKeySound(e.key, keySoundProfileRef.current);
-                 }
+                 playClick(e.key);
                }}
                placeholder="ENTER TITLE..."
                className={`title-input-field w-full bg-transparent border-b-[6px] text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black pb-4 pr-2 focus:ring-0 focus:outline-none placeholder:opacity-20 uppercase tracking-tighter text-inherit border-current`}

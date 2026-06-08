@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Maximize, Edit3, Moon, Sun, Menu as MenuIcon, Plus, X, Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Undo, Redo, Settings, Search, Download, ChevronDown, ChevronUp, Trash2, Check, Eye, EyeOff, Clock, Minus, Eraser, Info, Copy, Clipboard } from 'lucide-react';
+import { Maximize, Edit3, Moon, Sun, Menu as MenuIcon, Plus, X, Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Undo, Redo, Settings, Search, Download, ChevronDown, ChevronUp, Trash2, Check, Eye, EyeOff, Clock, Minus, Eraser, Info, Copy, Clipboard, FileText } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
@@ -8,7 +8,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 import { playKeySound } from '../utils/keyboardAudio';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from '../utils/firebase';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, User } from 'firebase/auth';
 import { doc, setDoc, deleteDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
 
 type Note = {
@@ -173,6 +174,7 @@ const APP_THEMES: AppTheme[] = [
 export default function DigitalWindow() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [useLocalSession, setUseLocalSession] = useState(() => {
     return sessionStorage.getItem('digital_window_offline_session') === 'true';
   });
@@ -182,18 +184,22 @@ export default function DigitalWindow() {
   const [notesList, setNotesList] = useState<Note[]>(() => {
     const saved = localStorage.getItem('digital_window_all_notes');
     if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed && parsed.length > 0) {
-        // Real-time migration to remove duplicate 'welcome.' heading inside the body of existing welcome notes
-        return parsed.map((note: Note) => {
-          if (note.title.toLowerCase() === 'welcome' && note.content.startsWith('<h2>welcome.</h2>')) {
-            return {
-              ...note,
-              content: note.content.replace('<h2>welcome.</h2>', '')
-            };
-          }
-          return note;
-        });
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.length > 0) {
+          // Real-time migration to remove duplicate 'welcome.' heading inside the body of existing welcome notes
+          return parsed.map((note: Note) => {
+            if (note.title.toLowerCase() === 'welcome' && note.content.startsWith('<h2>welcome.</h2>')) {
+              return {
+                ...note,
+                content: note.content.replace('<h2>welcome.</h2>', '')
+              };
+            }
+            return note;
+          });
+        }
+      } catch (e) {
+        // Fallback gracefully without throwing terminal logging errors
       }
     }
     
@@ -353,6 +359,22 @@ export default function DigitalWindow() {
   };
 
   useEffect(() => {
+    // Check if user is returning from a redirect auth flow
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result && result.user) {
+          setUser(result.user);
+        }
+      })
+      .catch((err: any) => {
+        console.error("Redirect sign-in error: ", err);
+        let friendlyMessage = err?.message || String(err);
+        if (err?.code === 'auth/unauthorized-domain') {
+          friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
+        }
+        setAuthError(friendlyMessage);
+      });
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
@@ -1067,18 +1089,57 @@ export default function DigitalWindow() {
     setContextMenu({ x, y, visible: true });
   };
 
-  const handleSignIn = async () => {
+  const handleSignInPopup = async () => {
     if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
+    setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      console.error("Sign-in failed (Popup): ", err);
+      let friendlyMessage = err?.message || String(err);
+      if (err?.code === 'auth/popup-blocked') {
+        friendlyMessage = 'The Google login popup was blocked by your browser/device. Try using the Redirect method below, or allow popups.';
+      } else if (err?.code === 'auth/unauthorized-domain') {
+        friendlyMessage = 'This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ' + window.location.hostname;
+      } else if (err?.code === 'auth/internal-error') {
+        friendlyMessage = 'Firebase Auth Internal Error. This often means network issues or blocklists in your browser environment. Try the Redirect method.';
+      } else if (window.self !== window.top) {
+        friendlyMessage = 'Google Sign-In popups are heavily blocked inside iframe previews by modern browsers. Please use the Redirect method, or open the app in a new tab first.';
+      }
+      setAuthError(friendlyMessage);
+    }
+  };
+
+  const handleSignInRedirect = async () => {
+    if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
+    setAuthError(null);
+    try {
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err: any) {
+      console.error("Sign-in failed (Redirect): ", err);
+      let friendlyMessage = err?.message || String(err);
+      if (err?.code === 'auth/unauthorized-domain') {
+        friendlyMessage = 'This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ' + window.location.hostname;
+      }
+      setAuthError(friendlyMessage);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+    try {
+      await signOut(auth);
+      setUseLocalSession(false);
+      sessionStorage.removeItem('digital_window_offline_session');
+      setAuthError(null);
     } catch (err) {
-      console.error("Sign-in failed: ", err);
+      console.error("Sign-out error: ", err);
     }
   };
 
   if (authLoading) {
     return (
-      <div className="w-full h-[100dvh] flex items-center justify-center bg-[#F4F4F5] dark:bg-[#0F0F11] font-sans">
+      <div className="w-full h-[100dvh] flex items-center justify-center bg-[#F4F4F5] dark:bg-[#0F0F11] font-sans" id="auth-loading-screen">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-[4px] border-black dark:border-white border-t-transparent dark:border-t-transparent animate-spin rounded-full" />
           <span className="text-xs uppercase font-extrabold tracking-widest text-neutral-400 dark:text-neutral-500 animate-pulse">Initializing Window...</span>
@@ -1095,6 +1156,7 @@ export default function DigitalWindow() {
 
     return (
       <div 
+        id="auth-landing-view"
         style={{ 
           backgroundImage: `radial-gradient(${landingDotColor} 3px, transparent 3px)`, 
           backgroundSize: '32px 32px',
@@ -1105,141 +1167,169 @@ export default function DigitalWindow() {
           paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 12px)',
           paddingRight: 'calc(env(safe-area-inset-right, 0px) + 12px)'
         }}
-        className="w-full h-[100dvh] flex flex-col items-center justify-center transition-colors duration-300 animate-fade-in overflow-hidden select-none"
+        className="w-full h-[100dvh] flex flex-col items-center justify-center transition-colors duration-300 animate-fade-in overflow-y-auto select-none font-sans"
       >
         <div 
+          id="auth-landing-card"
           style={{ backgroundColor: landingCardBg, borderColor: isDarkMode ? '#FFFFFF40' : '#111111' }}
-          className="w-full max-w-[380px] sm:max-w-xl border-[4px] rounded-sm shadow-[6px_6px_0px_#11111126] sm:shadow-[12px_12px_0px_#11111126] dark:shadow-[6px_6px_0px_#00000050] sm:dark:shadow-[12px_12px_0px_#00000050] p-3 sm:p-7 flex flex-col gap-2.5 sm:gap-4.5 text-center relative overflow-hidden transition-all duration-300 my-auto"
+          className="w-full max-w-[460px] md:max-w-3xl border-[4px] rounded-sm shadow-[8px_8px_0px_#11111126] dark:shadow-[8px_8px_0px_#00000050] p-4 sm:p-8 flex flex-col gap-4 sm:gap-6 text-center relative overflow-hidden transition-all duration-300 my-auto font-sans text-neutral-900 dark:text-neutral-100"
         >
-          <div className="absolute top-2.5 right-2.5 z-10">
+          {/* Quick theme control */}
+          <div className="absolute top-3 right-3 z-10">
             <button 
-              onClick={() => setIsDarkMode(!isDarkMode)} 
-              className="p-1 rounded-sm border-2 border-transparent hover:border-neutral-200 dark:hover:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 transition-all cursor-pointer"
-              title="Toggle preview theme"
+              id="landing-toggle-theme-btn"
+              onClick={() => {
+                const toggled = !isDarkMode;
+                setIsDarkMode(toggled);
+                localStorage.setItem('digital_window_theme', toggled ? 'dark' : 'light');
+              }} 
+              className="p-1.5 rounded-sm border-2 border-transparent hover:border-neutral-200 dark:hover:border-neutral-800 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 transition-all cursor-pointer"
+              title="Toggle theme inside preview"
             >
-              {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
 
-          <div className="flex flex-col gap-1 sm:gap-2 mt-0.5 sm:mt-2 relative z-10">
+          {/* Header section */}
+          <div className="flex flex-col gap-2 mt-1 relative z-10">
             <div 
               style={{ backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5', borderColor: isDarkMode ? '#FFFFFF22' : '#111111' }}
-              className="mx-auto w-10 h-10 sm:w-14 sm:h-14 border-[2.5px] sm:border-[3px] border-black flex items-center justify-center font-black rounded-lg shadow-[2.5px_2.5px_0px_#11111126] dark:shadow-[2.5px_2.5px_0px_#00000045] mb-0.5 sm:mb-1 scale-100 sm:scale-105 relative select-none"
+              className="mx-auto w-12 h-12 sm:w-16 sm:h-16 border-[3px] border-black flex items-center justify-center font-black rounded-lg shadow-[3px_3px_0px_#11111126] dark:shadow-[3px_3px_0px_#00000045] mb-1 scale-100 relative select-none"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`w-5 h-5 sm:w-7 sm:h-7 ${isDarkMode ? 'text-neutral-100' : 'text-neutral-900'}`}>
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-              </svg>
+              <FileText className="w-6 h-6 sm:w-8 sm:h-8" style={{ stroke: isDarkMode ? '#F5F5F7' : '#111111' }} strokeWidth={2.2} />
             </div>
             
-            <h1 className="text-xl sm:text-4xl font-black tracking-tight uppercase leading-none bg-gradient-to-b from-neutral-900 to-neutral-750 dark:from-white dark:to-neutral-300 bg-clip-text">
+            <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight uppercase leading-none bg-gradient-to-b from-neutral-900 to-neutral-750 dark:from-white dark:to-neutral-300 bg-clip-text">
               web notes
             </h1>
-            <p className="font-mono text-[8px] sm:text-[10px] font-black uppercase tracking-widest opacity-60 flex items-center justify-center gap-1 sm:gap-1.5">
-              <span>distraction-free text repository</span>
-              <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <p className="font-mono text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-60 flex items-center justify-center gap-1.5">
+              <span>distraction-free plain text editor</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             </p>
           </div>
 
           <div style={{ backgroundColor: isDarkMode ? '#ffffff10' : '#11111110' }} className="w-full h-px relative z-10" />
 
-          {/* Styled feature list card rows */}
-          <div className="flex flex-col gap-1.5 sm:gap-3 text-left max-w-md mx-auto w-full relative z-10">
+          {/* Setup / choice grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left max-w-2xl mx-auto w-full relative z-10">
+            
+            {/* Option A: Cloud Space */}
             <div 
-              style={{ borderColor: isDarkMode ? '#FFFFFF15' : '#E4E4E7' }}
-              className={`flex gap-2 sm:gap-3.5 items-start p-2 sm:p-3 border-[2px] rounded-sm hover:border-black dark:hover:border-white/30 transition-all duration-200 group ${isDarkMode ? 'hover:bg-neutral-800/10' : 'hover:bg-neutral-50/50'}`}
+              id="cloud-option-card"
+              style={{ borderColor: isDarkMode ? '#ffffff15' : '#E4E4E7' }}
+              className="flex flex-col p-4 border-[2.5px] rounded-sm hover:border-black dark:hover:border-white/35 transition-all duration-200"
             >
-              <div 
-                className={`flex-shrink-0 w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-sm flex items-center justify-center font-extrabold text-[9px] sm:text-xs border-[2px] transition-all duration-200 ${
-                  isDarkMode 
-                    ? 'border-neutral-700 bg-neutral-800 text-neutral-400 group-hover:bg-white group-hover:text-black group-hover:border-white' 
-                    : 'border-neutral-300 bg-neutral-100 text-neutral-600 group-hover:bg-black group-hover:text-white group-hover:border-black'
-                }`}
-              >
-                01
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className={`font-extrabold text-[10px] sm:text-sm uppercase tracking-wide leading-tight ${isDarkMode ? 'text-neutral-200' : 'text-neutral-900'}`}>Distraction-Free Environment</span>
-                <span className={`text-[9px] sm:text-xs mt-0.5 sm:mt-1 leading-snug sm:leading-normal ${isDarkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>No clutter, no alerts. Just you, responsive typing feedback, and your writing.</span>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-[#ef4444] font-black mb-1">RECOMMENDED</span>
+              <h3 className="text-sm font-black uppercase tracking-wide mb-1 leading-snug">Cloud Save & Sync</h3>
+              <p className="text-[11px] leading-relaxed opacity-60 mb-4 flex-grow">
+                Securely back up your writing to Google Cloud. Keep all your notes saved automatically and beautifully in sync in real-time across your desktop, laptop, and mobile devices.
+              </p>
+
+              <div className="flex flex-col gap-3.5 mt-auto">
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    id="landing-signin-redirect-btn"
+                    onClick={handleSignInRedirect}
+                    style={{
+                      backgroundColor: '#3b82f6',
+                      color: '#ffffff',
+                      borderWidth: '2px',
+                      borderColor: 'black'
+                    }}
+                    className="w-full py-2.5 text-xs font-black transition-all shadow-[2.5px_2.5px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3.5px_3.5px_0px_#000] active:translate-y-px active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer rounded-sm"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                    </svg>
+                    <span>Google Sign In (Redirect)</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    id="landing-signin-popup-btn"
+                    onClick={handleSignInPopup}
+                    style={{
+                      backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5',
+                      color: isDarkMode ? '#F5F5F7' : '#111111',
+                      borderWidth: '2px',
+                      borderColor: 'black'
+                    }}
+                    className="w-full py-2 text-xs font-black transition-all shadow-[2px_2px_0px_#11111126] dark:shadow-[2px_2px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3px_3px_0px_#11111126] active:translate-y-px active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer rounded-sm"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                    </svg>
+                    <span>Google Sign In (Popup)</span>
+                  </button>
+                </div>
               </div>
             </div>
 
+            {/* Option B: Local Space */}
             <div 
-              style={{ borderColor: isDarkMode ? '#FFFFFF15' : '#E4E4E7' }}
-              className={`flex gap-2 sm:gap-3.5 items-start p-2 sm:p-3 border-[2px] rounded-sm hover:border-black dark:hover:border-white/30 transition-all duration-200 group ${isDarkMode ? 'hover:bg-neutral-800/10' : 'hover:bg-neutral-50/50'}`}
+              id="local-option-card"
+              style={{ borderColor: isDarkMode ? '#ffffff15' : '#E4E4E7' }}
+              className="flex flex-col p-4 border-[2.5px] rounded-sm hover:border-black dark:hover:border-white/35 transition-all duration-200"
             >
-              <div 
-                className={`flex-shrink-0 w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-sm flex items-center justify-center font-extrabold text-[9px] sm:text-xs border-[2px] transition-all duration-200 ${
+              <span className="text-[10px] font-mono uppercase tracking-widest text-[#22c55e] font-black mb-1">100% PRIVATE</span>
+              <h3 className="text-sm font-black uppercase tracking-wide mb-1 leading-snug">Local Offline Sandbox</h3>
+              <p className="text-[11px] leading-relaxed opacity-60 mb-4 flex-grow">
+                Write completely privately. Your documents remain cached exclusively inside your local browser memory sandbox and never touch the cloud. No setup or accounts required.
+              </p>
+
+              <button
+                id="landing-use-local-btn"
+                onClick={() => {
+                  if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                  setUseLocalSession(true);
+                  sessionStorage.setItem('digital_window_offline_session', 'true');
+                }}
+                className={`w-full mt-auto py-2.5 text-xs font-black border-[2.5px] transition-all rounded-sm uppercase tracking-wider cursor-pointer ${
                   isDarkMode 
-                    ? 'border-neutral-700 bg-neutral-800 text-neutral-400 group-hover:bg-white group-hover:text-black group-hover:border-white' 
-                    : 'border-neutral-300 bg-neutral-100 text-neutral-600 group-hover:bg-black group-hover:text-white group-hover:border-black'
+                    ? 'text-neutral-300 hover:bg-white hover:text-black hover:border-white border-neutral-700' 
+                    : 'text-neutral-900 hover:bg-black hover:text-white hover:border-black border-neutral-300'
                 }`}
               >
-                02
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className={`font-extrabold text-[10px] sm:text-sm uppercase tracking-wide leading-tight ${isDarkMode ? 'text-neutral-200' : 'text-neutral-900'}`}>Durable Cloud Sync</span>
-                <span className={`text-[9px] sm:text-xs mt-0.5 sm:mt-1 leading-snug sm:leading-normal ${isDarkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>Edits sync to a fully hardened Cloud Firestore back-end automatically.</span>
-              </div>
+                Launch Local Sandbox
+              </button>
             </div>
 
-            <div 
-              style={{ borderColor: isDarkMode ? '#FFFFFF15' : '#E4E4E7' }}
-              className={`flex gap-2 sm:gap-3.5 items-start p-2 sm:p-3 border-[2px] rounded-sm hover:border-black dark:hover:border-white/30 transition-all duration-200 group ${isDarkMode ? 'hover:bg-neutral-800/10' : 'hover:bg-neutral-50/50'}`}
-            >
-              <div 
-                className={`flex-shrink-0 w-5.5 h-5.5 sm:w-7 sm:h-7 rounded-sm flex items-center justify-center font-extrabold text-[9px] sm:text-xs border-[2px] transition-all duration-200 ${
-                  isDarkMode 
-                    ? 'border-neutral-700 bg-neutral-800 text-neutral-400 group-hover:bg-white group-hover:text-black group-hover:border-white' 
-                    : 'border-neutral-300 bg-neutral-100 text-neutral-600 group-hover:bg-black group-hover:text-white group-hover:border-black'
-                }`}
-              >
-                03
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className={`font-extrabold text-[10px] sm:text-sm uppercase tracking-wide leading-tight ${isDarkMode ? 'text-neutral-200' : 'text-neutral-900'}`}>Secure Multi-User</span>
-                <span className={`text-[9px] sm:text-xs mt-0.5 sm:mt-1 leading-snug sm:leading-normal ${isDarkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>Data is isolated using strict rules. Only you can access your documents.</span>
-              </div>
-            </div>
           </div>
 
-          <div className="flex flex-col gap-1.5 sm:gap-2 mt-0.5 sm:px-6 relative z-10">
-            <button
-              onClick={handleSignIn}
-              style={{
-                borderColor: isDarkMode ? '#FFFFFF22' : '#111111'
-              }}
-              className="w-full py-2 sm:py-3 text-xs sm:text-sm font-black border-[3px] bg-black hover:bg-neutral-900 text-white dark:bg-white dark:text-black dark:hover:bg-neutral-100 transition-all shadow-[2.5px_2.5px_0px_#11111126] dark:shadow-[2.5px_2.5px_0px_#00000045] active:translate-y-[2px] active:translate-x-[2px] active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2.5 cursor-pointer rounded-sm font-sans"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-              </svg>
-              <span>Continue with Google</span>
-            </button>
+          {/* Connection Error Diagnostic Output */}
+          {authError && (
+            <div id="landing-auth-error" style={{ borderColor: '#ef4444' }} className="text-left border-[3px] bg-red-400/5 dark:bg-red-950/10 text-red-700 dark:text-red-400 p-3 rounded-sm text-[11px] max-w-xl mx-auto w-full">
+              <span className="font-extrabold uppercase block mb-1">⚠️ Security Connection Issue Details:</span>
+              <p className="font-mono leading-tight text-[10.5px] mb-1.5 break-all">{authError}</p>
+              
+              {authError.includes('Authorized Domain') && (
+                <div className="mt-2.5 border-t border-red-500/20 pt-2 flex flex-col gap-1.5 font-sans">
+                  <span className="font-extrabold text-[9px]">FIREBASE AUTH DOMAINS LIST ENFORCEMENT:</span>
+                  <code className="bg-neutral-100 dark:bg-neutral-900 px-2 py-1 rounded text-[10px] select-all font-mono border border-black/10 dark:border-white/10 text-center text-red-600 dark:text-red-400 font-extrabold">
+                    {window.location.hostname}
+                  </code>
+                  <a 
+                    href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="underline text-[10px] font-extrabold text-blue-600 dark:text-sky-450 block text-center"
+                  >
+                    {"Configure Firebase Authentication -> Authorized Domains ↗"}
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
 
-            <button
-              onClick={() => {
-                if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
-                setUseLocalSession(true);
-                sessionStorage.setItem('digital_window_offline_session', 'true');
-              }}
-              style={{
-                borderColor: isDarkMode ? '#FFFFFF22' : '#111111'
-              }}
-              className={`w-full py-2 text-[10px] sm:text-xs font-black border-[2px] border-dashed hover:border-solid transition-all rounded-sm uppercase tracking-wider cursor-pointer ${
-                isDarkMode 
-                  ? 'text-neutral-300 hover:bg-white hover:text-black hover:border-white' 
-                  : 'text-neutral-900 hover:bg-black hover:text-white hover:border-black'
-              }`}
-            >
-              Use Local Sandbox (No Sync)
-            </button>
-          </div>
+
+
         </div>
       </div>
     );
@@ -1749,8 +1839,8 @@ export default function DigitalWindow() {
                                 </div>
                               </div>
                               <button
-                                onClick={() => signOut(auth)}
-                                className="w-full py-1.5 border-2 border-red-500 hover:bg-red-500 hover:text-white font-black text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                onClick={handleSignOut}
+                                className="w-full py-1.5 border-2 border-red-500 hover:bg-red-500 hover:text-white font-black text-[10px] uppercase tracking-wider transition-colors cursor-pointer rounded-sm"
                               >
                                 DISCONNECT CLOUD BACKUP
                               </button>
@@ -1760,23 +1850,64 @@ export default function DigitalWindow() {
                               <p className="text-[10px] font-bold opacity-60 uppercase">
                                 {useLocalSession ? 'Using Local Sandbox' : 'Cloud Sync is inactive.'}
                               </p>
-                              <button
-                                onClick={handleSignIn}
-                                style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
-                                className="w-full py-2 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[2px_2px_0px_#000] active:translate-y-[1px] hover:opacity-90 cursor-pointer"
-                              >
-                                Connect Cloud Save
-                              </button>
-                              {useLocalSession && (
+                              
+                              <div className="flex flex-col gap-2.5 mt-1.5">
                                 <button
-                                  onClick={() => {
-                                    setUseLocalSession(false);
-                                    sessionStorage.removeItem('digital_window_offline_session');
-                                  }}
-                                  className="w-full py-1.5 border-2 border-dashed border-red-500 hover:border-solid hover:bg-neutral-800 dark:hover:bg-neutral-200 dark:hover:text-black hover:text-white hover:border-black font-black text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                  onClick={handleSignInRedirect}
+                                  style={{ backgroundColor: '#2563eb', color: '#ffffff' }}
+                                  className="w-full py-1.5 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[2px_2px_0px_#000] active:translate-y-[1px] hover:opacity-95 cursor-pointer flex items-center justify-center gap-1.5 rounded-sm"
                                 >
-                                  Return to Login Screen
+                                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm text-black">
+                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                                  </svg>
+                                  Google Redirect (Universal)
                                 </button>
+                                
+                                <button
+                                  onClick={handleSignInPopup}
+                                  style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
+                                  className="w-full py-1.5 border-2 border-black font-black text-xs uppercase tracking-wider shadow-[2px_2px_0px_#000] active:translate-y-[1px] hover:opacity-90 cursor-pointer flex items-center justify-center gap-1.5 rounded-sm"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm text-black">
+                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                                  </svg>
+                                  Google Popup (Direct)
+                                </button>
+                                
+                                {useLocalSession && (
+                                  <button
+                                    onClick={() => {
+                                      if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                                      setUseLocalSession(false);
+                                      sessionStorage.removeItem('digital_window_offline_session');
+                                    }}
+                                    className="w-full py-1.5 mt-1 border-2 border-dashed border-red-500 hover:border-solid hover:bg-red-500 hover:text-white dark:hover:text-black dark:hover:bg-red-400 font-black text-[10px] uppercase tracking-wider transition-all cursor-pointer rounded-sm"
+                                  >
+                                    Return to Login
+                                  </button>
+                                )}
+                              </div>
+
+                              {authError && (
+                                <div className="mt-2 text-left border-2 border-red-500 bg-red-500/10 text-red-600 dark:text-red-400 p-2 rounded-sm text-[9px] leading-snug">
+                                  <span className="font-extrabold uppercase block mb-0.5">⚠️ Connection issue:</span>
+                                  <p className="font-mono text-[8.5px] break-words">{authError}</p>
+                                  
+                                  {authError.includes('Authorized Domain') && (
+                                    <div className="mt-1 border-t border-red-500/20 pt-1 flex flex-col gap-1 font-sans">
+                                      <span className="font-extrabold text-[8px] opacity-75">ADD THIS DOMAIN IN FIREBASE:</span>
+                                      <code className="bg-neutral-100 dark:bg-neutral-900 px-1 py-0.5 rounded text-[8px] break-all select-all font-mono border border-black/10 text-center font-bold text-red-600 dark:text-red-400">
+                                        {window.location.hostname}
+                                      </code>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           )}
@@ -1834,12 +1965,7 @@ export default function DigitalWindow() {
                         style={{ backgroundColor: themeModeSettings.activeNoteBg }}
                         className="w-9 h-9 border-[3px] border-black flex items-center justify-center font-black rounded-sm flex-shrink-0 shadow-[2px_2px_0px_#000]"
                       >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5" style={{ stroke: themeModeSettings.activeNoteText }}>
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="16" y1="13" x2="8" y2="13" />
-                          <line x1="16" y1="17" x2="8" y2="17" />
-                        </svg>
+                        <FileText className="w-5 h-5" style={{ stroke: themeModeSettings.activeNoteText }} strokeWidth={2.5} />
                       </div>
                       <div className="flex flex-col">
                         <span className="text-[17px] font-black tracking-wider uppercase leading-none">WEB NOTES</span>

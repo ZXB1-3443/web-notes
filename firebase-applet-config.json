@@ -1,10 +1,10 @@
 {
-  "projectId": "amiable-keel-1x6pd",
-  "appId": "1:796261804973:web:40347aa17d13daed680f24",
-  "apiKey": "AIzaSyD_c12W-LOs0JkOaHzXGQOydhrVc0Pt5rc",
-  "authDomain": "amiable-keel-1x6pd.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-a1677f8b-4d51-4df6-8518-edad8c9721f1",
-  "storageBucket": "amiable-keel-1x6pd.firebasestorage.app",
-  "messagingSenderId": "796261804973",
-  "measurementId": ""
+  "projectId": "web-notes-online",
+  "appId": "1:418178218511:web:e240f9bbd67383c1bc417a",
+  "apiKey": "AIzaSyAhCONaEz9_-982M81pC_3isl_dkpoAG8s",
+  "authDomain": "web-notes-online.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "web-notes-online.firebasestorage.app",
+  "messagingSenderId": "418178218511",
+  "measurementId": "G-GYF32DHRQD"
 }

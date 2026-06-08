@@ -175,6 +175,13 @@ export default function DigitalWindow() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isInIframe] = useState(() => {
+    try {
+      return window.self !== window.top;
+    } catch (e) {
+      return true;
+    }
+  });
   const [useLocalSession, setUseLocalSession] = useState(() => {
     return sessionStorage.getItem('digital_window_offline_session') === 'true';
   });
@@ -359,29 +366,67 @@ export default function DigitalWindow() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
+    // Detect if we are loading following an oauth redirect.
+    // Firebase Auth redirect URLs typically hold parameters in query string or hash.
+    const hasRedirectParams = 
+      window.location.href.includes('__firebase_request_key') || 
+      window.location.search.includes('apiKey=') ||
+      window.location.hash.includes('apiKey=') ||
+      window.location.href.includes('authHandler') ||
+      window.location.href.includes('authDomain') ||
+      window.location.search.includes('fid=') ||
+      window.location.hash.includes('fid=') ||
+      window.location.hash.includes('authEvent=');
+
+    // If there are redirect params, keep authLoading = true until getRedirectResult completes.
+    if (hasRedirectParams) {
+      setAuthLoading(true);
+    }
+
     // Check if user is returning from a redirect auth flow
     getRedirectResult(auth)
       .then((result) => {
-        if (result && result.user) {
-          setUser(result.user);
+        if (isMounted) {
+          if (result && result.user) {
+            setUser(result.user);
+          }
         }
       })
       .catch((err: any) => {
-        console.error("Redirect sign-in error: ", err);
-        let friendlyMessage = err?.message || String(err);
-        if (err?.code === 'auth/unauthorized-domain') {
-          friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
-        } else if (err?.code === 'auth/operation-not-allowed') {
-          friendlyMessage = 'Google Sign-In is not enabled as a provider in your project. Please make sure Google Sign-In is enabled in your Firebase Console under Authentication -> Sign-in method.';
+        if (isMounted) {
+          console.error("Redirect sign-in error: ", err);
+          let friendlyMessage = err?.message || String(err);
+          if (err?.code === 'auth/unauthorized-domain') {
+            friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
+          } else if (err?.code === 'auth/operation-not-allowed') {
+            friendlyMessage = 'Google Sign-In is not enabled as a provider in your project. Please make sure Google Sign-In is enabled in your Firebase Console under Authentication -> Sign-in method.';
+          }
+          setAuthError(friendlyMessage);
         }
-        setAuthError(friendlyMessage);
+      })
+      .finally(() => {
+        if (isMounted && hasRedirectParams) {
+          setAuthLoading(false);
+        }
       });
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthLoading(false);
+      if (isMounted) {
+        setUser(currentUser);
+        // If we didn't have redirect params, we can set loading to false immediately.
+        // If we did have redirect params, the getRedirectResult.finally block handles setting authLoading to false.
+        if (!hasRedirectParams) {
+          setAuthLoading(false);
+        }
+      }
     });
-    return unsubscribe;
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -1215,6 +1260,37 @@ export default function DigitalWindow() {
           </div>
 
           <div style={{ backgroundColor: isDarkMode ? '#ffffff10' : '#11111110' }} className="w-full h-px relative z-10" />
+
+          {isInIframe && (
+            <div 
+              id="iframe-auth-warning"
+              style={{
+                borderColor: '#eab308',
+                backgroundColor: isDarkMode ? 'rgba(133, 77, 14, 0.15)' : '#fef9c3' 
+              }}
+              className="text-left border-[2.5px] p-3 rounded-sm relative z-10 text-[11px] leading-normal select-none max-w-2xl mx-auto w-full transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 font-sans border-amber-500/80"
+            >
+              <div className="flex-1 text-amber-900 dark:text-amber-200">
+                <span className="text-[9px] font-mono text-amber-700 dark:text-amber-450 font-black uppercase tracking-wider block mb-0.5">⚠️ IFRAME PREVIEW AUTHENTICATION WARNING</span>
+                <p className="opacity-90">
+                  Modern web browsers block third-party cookies and partition storage inside previews. This makes Google redirects or popups fail occasionally. For a seamless experience with zero auth issues, please open the notes app in a new tab.
+                </p>
+              </div>
+              <a 
+                href={window.location.href} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                onClick={() => {
+                  if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
+                }}
+                className="px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider bg-amber-500 hover:bg-amber-600 dark:bg-amber-550 dark:hover:bg-amber-500 text-black border-2 border-black rounded-sm shadow-[2px_2px_0px_rgba(0,0,0,0.15)] hover:shadow-[3px_3px_0px_rgba(0,0,0,0.2)] transition-all shrink-0 select-none cursor-pointer flex items-center gap-1.5"
+                title="Breakout of the preview frame"
+              >
+                <span>Open App in New Tab</span>
+                <Maximize className="w-3.5 h-3.5 shrink-0" />
+              </a>
+            </div>
+          )}
 
           {/* Setup / choice grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left max-w-2xl mx-auto w-full relative z-10">

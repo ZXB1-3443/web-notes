@@ -371,6 +371,8 @@ export default function DigitalWindow() {
         let friendlyMessage = err?.message || String(err);
         if (err?.code === 'auth/unauthorized-domain') {
           friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
+        } else if (err?.code === 'auth/operation-not-allowed') {
+          friendlyMessage = 'Google Sign-In is not enabled as a provider in your project. Please make sure Google Sign-In is enabled in your Firebase Console under Authentication -> Sign-in method.';
         }
         setAuthError(friendlyMessage);
       });
@@ -1103,6 +1105,8 @@ export default function DigitalWindow() {
         friendlyMessage = 'This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ' + window.location.hostname;
       } else if (err?.code === 'auth/internal-error') {
         friendlyMessage = 'Firebase Auth Internal Error. This often means network issues or blocklists in your browser environment. Try the Redirect method.';
+      } else if (err?.code === 'auth/operation-not-allowed') {
+        friendlyMessage = 'Google Sign-In is not enabled as a provider in your project. Please make sure Google Sign-In is enabled in your Firebase Console under Authentication -> Sign-in method.';
       } else if (window.self !== window.top) {
         friendlyMessage = 'Google Sign-In popups are heavily blocked inside iframe previews by modern browsers. Please use the Redirect method, or open the app in a new tab first.';
       }
@@ -1120,6 +1124,8 @@ export default function DigitalWindow() {
       let friendlyMessage = err?.message || String(err);
       if (err?.code === 'auth/unauthorized-domain') {
         friendlyMessage = 'This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ' + window.location.hostname;
+      } else if (err?.code === 'auth/operation-not-allowed') {
+        friendlyMessage = 'Google Sign-In is not enabled as a provider in your project. Please make sure Google Sign-In is enabled in your Firebase Console under Authentication -> Sign-in method.';
       }
       setAuthError(friendlyMessage);
     }
@@ -1322,6 +1328,23 @@ export default function DigitalWindow() {
                     className="underline text-[10px] font-extrabold text-blue-600 dark:text-sky-450 block text-center"
                   >
                     {"Configure Firebase Authentication -> Authorized Domains ↗"}
+                  </a>
+                </div>
+              )}
+
+              {(authError.includes('not enabled') || authError.includes('operation-not-allowed')) && (
+                <div className="mt-2.5 border-t border-red-500/20 pt-2 flex flex-col gap-1.5 font-sans">
+                  <span className="font-extrabold text-[9px]">FIREBASE AUTH PROVIDER ENFORCEMENT:</span>
+                  <p className="text-[10px] opacity-75 leading-normal mb-1">
+                    Google Sign-In has not been enabled in your Firebase project. Go to your Firebase Console under Authentication to enable Google as a sign-in provider.
+                  </p>
+                  <a 
+                    href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="underline text-[10px] font-extrabold text-blue-600 dark:text-sky-450 block text-center"
+                  >
+                    {"Configure Firebase Authentication -> Add Google Provider ↗"}
                   </a>
                 </div>
               )}

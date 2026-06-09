@@ -1013,6 +1013,18 @@ export default function DigitalWindow() {
           color: ${themeModeSettings.text}99 !important;
         }
 
+        /* Prevent touch devices from being trapped in Focus Mode by ensuring the nav is slightly visible in status-bar/nav areas, making it completely tap-receptive */
+        @media (pointer: coarse) {
+          .focus-mode-nav-hidden {
+            opacity: 0.25 !important;
+          }
+          .focus-mode-nav-hidden:hover,
+          .focus-mode-nav-hidden:active,
+          .focus-mode-nav-hidden:focus-within {
+            opacity: 1 !important;
+          }
+        }
+
       `}</style>
 
       {/* Extreme Left Hover Detector Strip */}
@@ -1036,7 +1048,7 @@ export default function DigitalWindow() {
               setIsSidebarPinned(false);
               setIsSidebarHovered(false);
             }}
-            className="fixed inset-0 bg-black/60 z-45 md:hidden cursor-pointer"
+            className="fixed inset-0 bg-black/60 z-45 lg:hidden cursor-pointer"
           />
         )}
       </AnimatePresence>
@@ -1045,9 +1057,9 @@ export default function DigitalWindow() {
       <motion.div
         initial={false}
         animate={{ 
-          width: isSidebarOpen ? "min(100vw, 384px)" : "0px",
-          borderRightWidth: isSidebarOpen ? 3 : 0,
-          boxShadow: isSidebarOpen ? `8px 0px 0px ${themeModeSettings.text}` : `0px 0px 0px ${themeModeSettings.text}`
+          width: isSidebarOpen ? (isMobile ? "100vw" : "384px") : "0px",
+          borderRightWidth: (isSidebarOpen && !isMobile) ? 3 : 0,
+          boxShadow: (isSidebarOpen && !isMobile) ? `8.5px 0px 0px ${themeModeSettings.text}` : `0px 0px 0px ${themeModeSettings.text}`
         }}
         style={{
           backgroundColor: themeModeSettings.sidebarBg,
@@ -1056,7 +1068,7 @@ export default function DigitalWindow() {
         transition={{ duration: 0.2, ease: "easeOut" }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-black absolute md:relative left-0 top-0 bottom-0 transition-colors duration-200"
+        className="sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-black absolute lg:relative left-0 top-0 bottom-0 transition-colors duration-200"
       >
         <div 
           style={{
@@ -1541,7 +1553,7 @@ export default function DigitalWindow() {
                         className="p-1.5 border-[3px] border-black hover:opacity-90 transition-colors active:translate-y-[1px] cursor-pointer"
                         title="Close Menu"
                       >
-                        <MenuIcon size={18} />
+                        <X size={18} />
                       </button>
                     </div>
                   </div>
@@ -1641,7 +1653,7 @@ export default function DigitalWindow() {
             paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 16px)',
             paddingRight: 'calc(env(safe-area-inset-right, 0px) + 16px)'
           }}
-          className={`w-full flex flex-row justify-between items-center gap-2 sm:gap-6 font-bold text-sm tracking-wide relative z-20 flex-shrink-0 transition-opacity duration-300 ${focusMode ? 'opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}
+          className={`w-full flex flex-row justify-between items-center gap-2 sm:gap-6 font-bold text-sm tracking-wide relative z-20 flex-shrink-0 transition-opacity duration-300 ${focusMode ? 'focus-mode-nav-hidden opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}
         >
             <div className="flex sm:flex-1 justify-start gap-4 items-center flex-shrink-0">
             {!isSidebarOpen && (
@@ -1730,7 +1742,10 @@ export default function DigitalWindow() {
  
             <button
               style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
-              onClick={() => setIsDarkMode(prev => !prev)}
+              onClick={() => {
+                if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
+                setIsDarkMode(prev => !prev);
+              }}
               className={`${actionBtn}`}
               title="Toggle theme"
             >

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Maximize, Edit3, Moon, Sun, Menu as MenuIcon, Plus, X, Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Undo, Redo, Settings, Search, Download, ChevronDown, ChevronUp, Trash2, Check, Eye, EyeOff, Clock, Minus, Eraser, Info, Copy, Clipboard, FileText, Sparkles, Shield, Keyboard } from 'lucide-react';
+import { Maximize, Edit3, Moon, Sun, Menu as MenuIcon, Plus, X, Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3, Type, List, ListOrdered, Quote, Undo, Redo, Settings, Search, Download, ChevronDown, ChevronUp, Trash2, Check, Eye, EyeOff, Clock, Minus, Eraser, Info, Copy, Clipboard, FileText, Sparkles, Shield, Keyboard, Volume2 } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
@@ -238,7 +238,7 @@ export default function DigitalWindow() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarPinned, setIsSidebarPinned] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'display' | 'themes'>('display');
+  const [settingsTab, setSettingsTab] = useState<'display' | 'themes' | 'sound'>('display');
   const isSidebarOpen = isSidebarPinned || isSidebarHovered;
   const [isMobile, setIsMobile] = useState(false);
 
@@ -2021,7 +2021,7 @@ export default function DigitalWindow() {
 
                   {/* Settings Tab Selector */}
                   <div className="flex border-[3px] border-black p-0.5 bg-neutral-100 dark:bg-neutral-900 shadow-[2px_2px_0px_#000] flex-shrink-0 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
-                    {(['display', 'themes'] as const).map(tab => (
+                    {(['display', 'themes', 'sound'] as const).map(tab => (
                       <button
                         key={tab}
                         onClick={() => setSettingsTab(tab)}
@@ -2039,6 +2039,7 @@ export default function DigitalWindow() {
                       >
                         {tab === 'display' && <Eye size={12} />}
                         {tab === 'themes' && <Sun size={12} />}
+                        {tab === 'sound' && <Volume2 size={12} />}
                         <span className="uppercase">{tab}</span>
                       </button>
                     ))}
@@ -2267,9 +2268,17 @@ export default function DigitalWindow() {
                             })}
                           </div>
                         </div>
+                      </motion.div>
+                    )}
 
+                    {settingsTab === 'sound' && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex flex-col gap-3 animate-fade-in"
+                      >
                         {/* Keyboard Press Sounds */}
-                        <div className="flex flex-col gap-1.5 w-full mt-2">
+                        <div className="flex flex-col gap-1.5 w-full">
                           <div className="flex items-center justify-between w-full p-3 sm:p-4 border-[3px] border-black rounded-sm bg-black/5 relative">
                             <div className="flex flex-col text-left pr-2 flex-1 min-w-0">
                               <span className="uppercase text-xs font-black tracking-wider leading-tight">Typing clicks</span>
@@ -2441,18 +2450,31 @@ export default function DigitalWindow() {
                         <span className="text-[17px] font-black tracking-wider uppercase leading-none">WEB NOTES</span>
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsSidebarPinned(false);
-                        setIsSidebarHovered(false);
-                      }}
-                      style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
-                      className="p-1.5 border-[3px] border-black hover:opacity-90 transition-colors active:translate-y-[1px] cursor-pointer"
-                      title="Close Menu"
-                    >
-                      <MenuIcon size={18} />
-                    </button>
+                    <div className="flex gap-1.5 items-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSettingsExpanded(true);
+                        }}
+                        style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                        className="p-1.5 border-[3px] border-black hover:opacity-90 transition-colors active:translate-y-[1px] cursor-pointer"
+                        title="Settings"
+                      >
+                        <Settings size={18} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSidebarPinned(false);
+                          setIsSidebarHovered(false);
+                        }}
+                        style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
+                        className="p-1.5 border-[3px] border-black hover:opacity-90 transition-colors active:translate-y-[1px] cursor-pointer"
+                        title="Close Menu"
+                      >
+                        <MenuIcon size={18} />
+                      </button>
+                    </div>
                   </div>
                   <button 
                     onClick={createNewNote}
@@ -2534,24 +2556,6 @@ export default function DigitalWindow() {
                       })
                     )}
                   </div>
-                </div>
-
-                <div className="border-t-[3px] border-black pt-4 flex flex-col gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSettingsExpanded(true);
-                    }}
-                    className="flex justify-between items-center w-full px-4 py-3 font-sans hover:bg-black/5 dark:hover:bg-white/5 transition-colors border-[3px] border-black bg-black/5 dark:bg-white/5 active:translate-y-[1px] active:translate-x-[1px]"
-                    title="Open Settings Panel"
-                  >
-                    <div className="text-xs font-black tracking-widest uppercase flex items-center gap-2 opacity-90 select-none">
-                      <Settings size={14} /> SETTINGS
-                    </div>
-                    <div className="opacity-95 text-[10px] font-black uppercase">
-                      OPEN »
-                    </div>
-                  </button>
                 </div>
               </motion.div>
             )}

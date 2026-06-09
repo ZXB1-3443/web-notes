@@ -7,10 +7,6 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 import { playKeySound, playTypewriterBell } from '../utils/keyboardAudio';
-import { auth, db, googleProvider, OperationType, handleFirestoreError } from '../utils/firebase';
-import firebaseConfig from '../../firebase-applet-config.json';
-import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, User, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, deleteDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
 
 type Note = {
   id: string;
@@ -172,27 +168,7 @@ const APP_THEMES: AppTheme[] = [
 
 
 export default function DigitalWindow() {
-  const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isInIframe] = useState(() => {
-    try {
-      return window.self !== window.top;
-    } catch (e) {
-      return true;
-    }
-  });
-  const [useLocalSession, setUseLocalSession] = useState(() => {
-    return localStorage.getItem('digital_window_offline_session') !== 'false';
-  });
-  const [firestoreNotesLoaded, setFirestoreNotesLoaded] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [authActionLoading, setAuthActionLoading] = useState(false);
-  const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
-  const [activeAuthTab, setActiveAuthTab] = useState<'email' | 'google'>('email');
-  const cloudSaveTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const user = null;
 
   const [notesList, setNotesList] = useState<Note[]>(() => {
     const saved = localStorage.getItem('digital_window_all_notes');
@@ -238,7 +214,7 @@ export default function DigitalWindow() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSidebarPinned, setIsSidebarPinned] = useState(false);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'display' | 'themes' | 'sound'>('display');
+  const [settingsTab, setSettingsTab] = useState<'display' | 'themes' | 'sound' | 'cloud'>('display');
   const isSidebarOpen = isSidebarPinned || isSidebarHovered;
   const [isMobile, setIsMobile] = useState(false);
 
@@ -297,12 +273,7 @@ export default function DigitalWindow() {
 
   // Synchronize HTML/Body Background color and Theme Color Meta tag dynamically for native safe areas (notches/devices status bars)
   useEffect(() => {
-    let activeBg = isDarkMode ? '#0F0F11' : '#F5F5F7';
-    if (authLoading) {
-      activeBg = isDarkMode ? '#0F0F11' : '#F4F4F5';
-    } else if (user || useLocalSession) {
-      activeBg = themeModeSettings.bg;
-    }
+    let activeBg = themeModeSettings.bg;
 
     // Set fallback body/html styles to prevent screen flash or mismatched native bouncing borders
     document.documentElement.style.backgroundColor = activeBg;
@@ -316,7 +287,7 @@ export default function DigitalWindow() {
       document.getElementsByTagName('head')[0].appendChild(metaTag);
     }
     metaTag.content = activeBg;
-  }, [authLoading, user, useLocalSession, isDarkMode, themeModeSettings.bg]);
+  }, [isDarkMode, themeModeSettings.bg]);
 
   const [keySoundsEnabled, setKeySoundsEnabled] = useState(() => {
     const saved = localStorage.getItem('digital_window_key_sounds');
@@ -346,42 +317,27 @@ export default function DigitalWindow() {
   useEffect(() => {
     localStorage.setItem('digital_window_key_sounds', String(keySoundsEnabled));
     keySoundsEnabledRef.current = keySoundsEnabled;
-    if (user) {
-      saveConfigCloud({ keySoundsEnabled });
-    }
-  }, [keySoundsEnabled, user]);
+  }, [keySoundsEnabled]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_key_sound_profile', keySoundProfile);
     keySoundProfileRef.current = keySoundProfile;
-    if (user) {
-      saveConfigCloud({ keySoundProfile });
-    }
-  }, [keySoundProfile, user]);
+  }, [keySoundProfile]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_key_sound_volume', String(keySoundVolume));
     keySoundVolumeRef.current = keySoundVolume;
-    if (user) {
-      saveConfigCloud({ keySoundVolume });
-    }
-  }, [keySoundVolume, user]);
+  }, [keySoundVolume]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_bell_sound_enabled', String(bellSoundEnabled));
     bellSoundEnabledRef.current = bellSoundEnabled;
-    if (user) {
-      saveConfigCloud({ bellSoundEnabled });
-    }
-  }, [bellSoundEnabled, user]);
+  }, [bellSoundEnabled]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_show_grid_bg', String(showGridBg));
     showGridBgRef.current = showGridBg;
-    if (user) {
-      saveConfigCloud({ showGridBg });
-    }
-  }, [showGridBg, user]);
+  }, [showGridBg]);
 
   const keySoundsEnabledRef = React.useRef(keySoundsEnabled);
   const keySoundProfileRef = React.useRef(keySoundProfile);
@@ -389,15 +345,13 @@ export default function DigitalWindow() {
   const bellSoundEnabledRef = React.useRef(bellSoundEnabled);
   const showGridBgRef = React.useRef(showGridBg);
 
-  const userRef = React.useRef(user);
   const activeNoteIdRef = React.useRef(activeNoteId);
   const activeNoteRef = React.useRef(activeNote);
 
   useEffect(() => {
-    userRef.current = user;
     activeNoteIdRef.current = activeNoteId;
     activeNoteRef.current = activeNote;
-  }, [user, activeNoteId, activeNote]);
+  }, [activeNoteId, activeNote]);
 
   const playClick = (key: string = 'Space') => {
     if (keySoundsEnabledRef.current) {
@@ -407,256 +361,6 @@ export default function DigitalWindow() {
       }
     }
   };
-
-  const saveConfigCloud = async (updates: Record<string, any>) => {
-    if (!user) return;
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, {
-        ...updates,
-        userId: user.uid,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
-    }
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-
-    // Detect if we are loading following an oauth redirect.
-    // Firebase Auth redirect URLs typically hold parameters in query string or hash.
-    const hasRedirectParams = 
-      window.location.href.includes('__firebase_request_key') || 
-      window.location.search.includes('apiKey=') ||
-      window.location.hash.includes('apiKey=') ||
-      window.location.href.includes('authHandler') ||
-      window.location.href.includes('authDomain') ||
-      window.location.search.includes('fid=') ||
-      window.location.hash.includes('fid=') ||
-      window.location.hash.includes('authEvent=');
-
-    // If there are redirect params, keep authLoading = true until getRedirectResult completes.
-    if (hasRedirectParams) {
-      setAuthLoading(true);
-    }
-
-    // Check if user is returning from a redirect auth flow
-    getRedirectResult(auth)
-      .then((result) => {
-        if (isMounted) {
-          if (result && result.user) {
-            setUser(result.user);
-          }
-        }
-      })
-      .catch((err: any) => {
-        if (isMounted) {
-          console.warn("Redirect sign-in warning: ", err);
-          let friendlyMessage = err?.message || String(err);
-          if (err?.code === 'auth/unauthorized-domain') {
-            friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
-          } else if (err?.code === 'auth/operation-not-allowed') {
-            friendlyMessage = 'Google Sign-In is not enabled as a provider in your project. Please make sure Google Sign-In is enabled in your Firebase Console under Authentication -> Sign-in method.';
-          }
-          setAuthError(friendlyMessage);
-        }
-      })
-      .finally(() => {
-        if (isMounted && hasRedirectParams) {
-          setAuthLoading(false);
-        }
-      });
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (isMounted) {
-        setUser(currentUser);
-        // If we didn't have redirect params, we can set loading to false immediately.
-        // If we did have redirect params, the getRedirectResult.finally block handles setting authLoading to false.
-        if (!hasRedirectParams) {
-          setAuthLoading(false);
-        }
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
-  }, []);
-
-  // Secure tab breakout auto-trigger for Google login bypass inside iframes
-  useEffect(() => {
-    if (authLoading) return;
-    if (user) return;
-
-    const params = new URLSearchParams(window.location.search);
-    const trigger = params.get('auth_trigger');
-    if (!trigger) return;
-
-    if (trigger === 'google_redirect') {
-      // Clear parameter from URL so it doesn't loop infinitely on return redirect
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.delete('auth_trigger');
-      window.history.replaceState({}, '', newUrl.toString());
-
-      setAuthLoading(true);
-      setAuthError(null);
-
-      signInWithRedirect(auth, googleProvider)
-        .catch((err: any) => {
-          console.warn("Auto redirect login warning: ", err);
-          let friendlyMessage = err?.message || String(err);
-          if (err?.code === 'auth/unauthorized-domain') {
-            friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
-          }
-          setAuthError(friendlyMessage);
-          setAuthLoading(false);
-        });
-    } else if (trigger === 'google_popup') {
-      // Clear parameter
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.delete('auth_trigger');
-      window.history.replaceState({}, '', newUrl.toString());
-
-      setAuthLoading(true);
-      setAuthError(null);
-
-      signInWithPopup(auth, googleProvider)
-        .then((result) => {
-          if (result && result.user) {
-            setUser(result.user);
-          }
-        })
-        .catch((err: any) => {
-          console.warn("Auto popup login warning: ", err);
-          let friendlyMessage = err?.message || String(err);
-          if (err?.code === 'auth/unauthorized-domain') {
-            friendlyMessage = `This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ${window.location.hostname}`;
-          }
-          setAuthError(friendlyMessage);
-        })
-        .finally(() => {
-          setAuthLoading(false);
-        });
-    }
-  }, [authLoading, user]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const userDocRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.themeId !== undefined && data.themeId !== selectedThemeId) {
-          setSelectedThemeId(data.themeId);
-        }
-        if (data.isDarkMode !== undefined && data.isDarkMode !== isDarkMode) {
-          setIsDarkMode(data.isDarkMode);
-        }
-        if (data.showClock !== undefined && data.showClock !== showClock) {
-          setShowClock(data.showClock);
-        }
-        if (data.showStatusBar !== undefined && data.showStatusBar !== showStatusBar) {
-          setShowStatusBar(data.showStatusBar);
-        }
-        if (data.fontPreference !== undefined && data.fontPreference !== fontPreference) {
-          setFontPreference(data.fontPreference);
-        }
-        if (data.keySoundsEnabled !== undefined && data.keySoundsEnabled !== keySoundsEnabled) {
-          setKeySoundsEnabled(data.keySoundsEnabled);
-        }
-        if (data.keySoundProfile !== undefined && data.keySoundProfile !== keySoundProfile) {
-          setKeySoundProfile(data.keySoundProfile as any);
-        }
-        if (data.keySoundVolume !== undefined && data.keySoundVolume !== keySoundVolume) {
-          setKeySoundVolume(data.keySoundVolume);
-        }
-        if (data.bellSoundEnabled !== undefined && data.bellSoundEnabled !== bellSoundEnabled) {
-          setBellSoundEnabled(data.bellSoundEnabled);
-        }
-        if (data.showGridBg !== undefined && data.showGridBg !== showGridBg) {
-          setShowGridBg(data.showGridBg);
-        }
-        if (data.focusMode !== undefined && data.focusMode !== focusMode) {
-          setFocusMode(data.focusMode);
-        }
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
-    });
-
-    return unsubscribe;
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) {
-      setFirestoreNotesLoaded(false);
-      return;
-    }
-
-    const notesColRef = collection(db, 'users', user.uid, 'notes');
-    const unsubscribe = onSnapshot(notesColRef, (snapshot) => {
-      if (snapshot.metadata.hasPendingWrites) {
-        return;
-      }
-
-      const fetchedNotes: Note[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        fetchedNotes.push({
-          id: docSnap.id,
-          title: data.title || '',
-          content: data.content || '',
-          updatedAt: data.updatedAt || Date.now(),
-        });
-      });
-
-      if (fetchedNotes.length > 0) {
-        setNotesList(fetchedNotes);
-        setFirestoreNotesLoaded(true);
-      } else {
-        setFirestoreNotesLoaded(true);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/notes`);
-    });
-
-    return unsubscribe;
-  }, [user]);
-
-  useEffect(() => {
-    if (!user || !firestoreNotesLoaded) return;
-
-    const migrateLocalToCloud = async () => {
-      const local = localStorage.getItem('digital_window_all_notes');
-      if (!local) return;
-      try {
-        const parsed: Note[] = JSON.parse(local);
-        if (parsed && parsed.length > 0) {
-          for (const note of parsed) {
-            const existsInCloud = notesList.some(cn => cn.id === note.id);
-            if (!existsInCloud) {
-              const noteDocRef = doc(db, 'users', user.uid, 'notes', note.id);
-              await setDoc(noteDocRef, {
-                id: note.id,
-                userId: user.uid,
-                title: note.title,
-                content: note.content,
-                updatedAt: note.updatedAt
-              });
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Cloud Migration Handshake Error: ", err);
-      }
-    };
-
-    migrateLocalToCloud();
-  }, [user, firestoreNotesLoaded]);
 
   const [focusMode, setFocusMode] = useState(() => {
     return localStorage.getItem('digital_window_focus') === 'true';
@@ -974,47 +678,29 @@ export default function DigitalWindow() {
     } else {
       document.documentElement.classList.remove('dark');
     }
-    if (user) {
-      saveConfigCloud({ isDarkMode });
-    }
-  }, [isDarkMode, user]);
+  }, [isDarkMode]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_theme_id', selectedThemeId);
-    if (user) {
-      saveConfigCloud({ themeId: selectedThemeId });
-    }
-  }, [selectedThemeId, user]);
+  }, [selectedThemeId]);
 
 
 
   useEffect(() => {
     localStorage.setItem('digital_window_show_clock', String(showClock));
-    if (user) {
-      saveConfigCloud({ showClock });
-    }
-  }, [showClock, user]);
+  }, [showClock]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_show_status', String(showStatusBar));
-    if (user) {
-      saveConfigCloud({ showStatusBar });
-    }
-  }, [showStatusBar, user]);
+  }, [showStatusBar]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_font', fontPreference);
-    if (user) {
-      saveConfigCloud({ fontPreference });
-    }
-  }, [fontPreference, user]);
+  }, [fontPreference]);
 
   useEffect(() => {
     localStorage.setItem('digital_window_focus', String(focusMode));
-    if (user) {
-      saveConfigCloud({ focusMode });
-    }
-  }, [focusMode, user]);
+  }, [focusMode]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -1030,29 +716,14 @@ export default function DigitalWindow() {
     const newNote = { id: Date.now().toString(), title: '', content: '', updatedAt: Date.now() };
     setNotesList(prev => [newNote, ...prev]);
     setActiveNoteId(newNote.id);
-
-    const usr = userRef.current;
-    if (usr) {
-      const noteDocRef = doc(db, 'users', usr.uid, 'notes', newNote.id);
-      setDoc(noteDocRef, {
-        id: newNote.id,
-        userId: usr.uid,
-        title: newNote.title,
-        content: newNote.content,
-        updatedAt: newNote.updatedAt
-      }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${usr.uid}/notes/${newNote.id}`));
-    }
   }, []);
 
   const deleteNoteById = React.useCallback((id: string) => {
-    let emptyCreatedId: string | null = null;
-    const usr = userRef.current;
     const actId = activeNoteIdRef.current;
 
     setNotesList(prev => {
       if (prev.length === 1) {
         const newNote = { id: Date.now().toString(), title: '', content: '', updatedAt: Date.now() };
-        emptyCreatedId = newNote.id;
         setActiveNoteId(newNote.id);
         return [newNote];
       } else {
@@ -1064,27 +735,10 @@ export default function DigitalWindow() {
         return newList;
       }
     });
-
-    if (usr) {
-      const noteDocRef = doc(db, 'users', usr.uid, 'notes', id);
-      deleteDoc(noteDocRef).catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${usr.uid}/notes/${id}`));
-
-      if (emptyCreatedId) {
-        const newEmptyRef = doc(db, 'users', usr.uid, 'notes', emptyCreatedId);
-        setDoc(newEmptyRef, {
-          id: emptyCreatedId,
-          userId: usr.uid,
-          title: '',
-          content: '',
-          updatedAt: Date.now()
-        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${usr.uid}/notes/${emptyCreatedId}`));
-      }
-    }
   }, []);
 
   const updateActiveNote = (updates: Partial<Note>) => {
     const actId = activeNoteIdRef.current;
-    const usr = userRef.current;
     const nowStamp = Date.now();
 
     setNotesList(prev => 
@@ -1094,28 +748,6 @@ export default function DigitalWindow() {
           : n
       )
     );
-
-    if (usr && actId) {
-      setSaveStatus('saving');
-      if (cloudSaveTimeoutRef.current) clearTimeout(cloudSaveTimeoutRef.current);
-      cloudSaveTimeoutRef.current = setTimeout(async () => {
-        try {
-          const actNote = activeNoteRef.current;
-          const noteDocRef = doc(db, 'users', usr.uid, 'notes', actId);
-          await setDoc(noteDocRef, {
-            id: actId,
-            userId: usr.uid,
-            title: updates.title !== undefined ? updates.title : actNote?.title || '',
-            content: updates.content !== undefined ? updates.content : actNote?.content || '',
-            updatedAt: nowStamp
-          }, { merge: true });
-          setSaveStatus('saved');
-          setTimeout(() => setSaveStatus('idle'), 1000);
-        } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, `users/${usr.uid}/notes/${actId}`);
-        }
-      }, 1500);
-    }
   };
 
   const handleDeleteNote = (e: React.MouseEvent, id: string) => {
@@ -1257,572 +889,7 @@ export default function DigitalWindow() {
     setContextMenu({ x, y, visible: true });
   };
 
-  const handleSignInPopup = async () => {
-    if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
-    setAuthError(null);
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err: any) {
-      console.warn("Sign-in failed (Popup): ", err);
-      let friendlyMessage = err?.message || String(err);
-      if (err?.code === 'auth/popup-blocked') {
-        friendlyMessage = 'The Google login popup was blocked by your browser/device. Try using the Redirect method below, or allow popups.';
-      } else if (err?.code === 'auth/unauthorized-domain') {
-        friendlyMessage = 'This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ' + window.location.hostname;
-      } else if (err?.code === 'auth/internal-error') {
-        friendlyMessage = 'Firebase Auth Internal Error. This often means network issues or blocklists in your browser environment. Try the Redirect method.';
-      } else if (err?.code === 'auth/operation-not-allowed') {
-        friendlyMessage = 'Google Sign-In is not enabled as a provider in your project. Please make sure Google Sign-In is enabled in your Firebase Console under Authentication -> Sign-in method.';
-      } else if (window.self !== window.top) {
-        friendlyMessage = 'Google Sign-In popups are heavily blocked inside iframe previews by modern browsers. Please use the Redirect method, or open the app in a new tab first.';
-      }
-      setAuthError(friendlyMessage);
-    }
-  };
 
-  const handleSignInRedirect = async () => {
-    if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
-    setAuthError(null);
-    try {
-      await signInWithRedirect(auth, googleProvider);
-    } catch (err: any) {
-      console.warn("Sign-in failed (Redirect): ", err);
-      let friendlyMessage = err?.message || String(err);
-      if (err?.code === 'auth/unauthorized-domain') {
-        friendlyMessage = 'This domain is not listed as an Authorized Domain in your Firebase Console. Under Build -> Authentication -> Settings -> Authorized Domains, please add: ' + window.location.hostname;
-      } else if (err?.code === 'auth/operation-not-allowed') {
-        friendlyMessage = 'Google Sign-In is not enabled as a provider in your project. Please make sure Google Sign-In is enabled in your Firebase Console under Authentication -> Sign-in method.';
-      }
-      setAuthError(friendlyMessage);
-    }
-  };
-
-  const handleEmailAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
-    if (!email || !password) {
-      setAuthError('Please fill in both email and password fields.');
-      return;
-    }
-    if (password.length < 6) {
-      setAuthError('Password must be at least 6 characters.');
-      return;
-    }
-    setAuthError(null);
-    setAuthSuccessMessage(null);
-    setAuthActionLoading(true);
-
-    try {
-      if (isSignUp) {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        setUser(userCredential.user);
-        setAuthSuccessMessage('Account created successfully! Welcome.');
-      } else {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        setUser(userCredential.user);
-        setAuthSuccessMessage('Successfully signed in! Accessing web notes...');
-      }
-    } catch (err: any) {
-      console.warn("Email auth failed: ", err);
-      let friendlyMessage = err?.message || String(err);
-      if (err?.code === 'auth/email-already-in-use' || friendlyMessage.includes('auth/email-already-in-use')) {
-        friendlyMessage = 'This email is already in use by another account. Please select sign-in or try another email.';
-      } else if (err?.code === 'auth/wrong-password' || friendlyMessage.includes('auth/wrong-password')) {
-        friendlyMessage = 'Incorrect password. Review your details and try again.';
-      } else if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential' || friendlyMessage.includes('auth/user-not-found') || friendlyMessage.includes('auth/invalid-credential')) {
-        friendlyMessage = 'No account found with these credentials. If you are new, click "Don\'t have a cloud account? Sign Up & Sync" below.';
-      } else if (err?.code === 'auth/invalid-email' || friendlyMessage.includes('auth/invalid-email')) {
-        friendlyMessage = 'The email address format is invalid.';
-      } else if (err?.code === 'auth/weak-password' || friendlyMessage.includes('auth/weak-password')) {
-        friendlyMessage = 'Your password needs to be at least 6 characters.';
-      } else if (err?.code === 'auth/operation-not-allowed' || friendlyMessage.includes('auth/operation-not-allowed')) {
-        friendlyMessage = 'Email/Password sign-in is not enabled in your Firebase Console. Please go to Authentication -> Sign-in method and enable Email/Password.';
-      }
-      setAuthError(friendlyMessage);
-    } finally {
-      setAuthActionLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
-    try {
-      await signOut(auth);
-      setUseLocalSession(true);
-      localStorage.setItem('digital_window_offline_session', 'true');
-      setAuthError(null);
-    } catch (err) {
-      console.warn("Sign-out error: ", err);
-    }
-  };
-
-  if (authLoading) {
-    return (
-      <div className="w-full h-[100dvh] flex items-center justify-center bg-[#F4F4F5] dark:bg-[#0F0F11] font-sans" id="auth-loading-screen">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-[4px] border-black dark:border-white border-t-transparent dark:border-t-transparent animate-spin rounded-full" />
-          <span className="text-xs uppercase font-extrabold tracking-widest text-neutral-400 dark:text-neutral-500 animate-pulse">Initializing Window...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user && !useLocalSession) {
-    const landingBg = isDarkMode ? '#0F0F11' : '#F5F5F7';
-    const landingCardBg = isDarkMode ? '#1E1E22' : '#FFFFFF';
-    const authFormBg = isDarkMode ? '#16161A' : '#FAFAFC';
-    const landingText = isDarkMode ? '#F5F5F7' : '#111111';
-    const landingDotColor = isDarkMode ? '#ffffff0b' : '#1111110f';
-
-    return (
-      <div 
-        id="auth-landing-view"
-        style={{ 
-          backgroundImage: `radial-gradient(${landingDotColor} 3px, transparent 3px)`, 
-          backgroundSize: '24px 24px',
-          backgroundColor: landingBg,
-          color: landingText,
-        }}
-        className="w-full min-h-[100dvh] flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 transition-colors duration-300 animate-fade-in overflow-y-auto font-sans"
-      >
-        <div 
-          id="auth-landing-card"
-          style={{ backgroundColor: landingCardBg, borderColor: isDarkMode ? '#3F3F46' : '#111111' }}
-          className="w-full max-w-5xl border-[4px] rounded-sm shadow-[10px_10px_0px_#11111126] dark:shadow-[10px_10px_0px_#00000060] flex flex-col md:grid md:grid-cols-12 items-stretch overflow-hidden relative transition-all duration-300 my-auto"
-        >
-          {/* Quick theme control in the corner */}
-          <div className="absolute top-4 right-4 z-20">
-            <button 
-              id="landing-toggle-theme-btn"
-              onClick={() => {
-                const toggled = !isDarkMode;
-                setIsDarkMode(toggled);
-                localStorage.setItem('digital_window_theme', toggled ? 'dark' : 'light');
-              }} 
-              className="p-2 rounded-sm border-2 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-black dark:hover:border-zinc-100 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 transition-all cursor-pointer shadow-sm"
-              title="Toggle theme"
-            >
-              {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-          </div>
-
-          {/* LEFT SIDE: Brand Identity & Feature Marketing Column */}
-          <div className="md:col-span-7 p-6 sm:p-10 flex flex-col justify-between relative border-b-[4px] md:border-b-0 md:border-r-[4px] border-black/80 dark:border-white/10">
-            
-            {/* Branding Header Area */}
-            <div>
-              <div className="flex items-center gap-2.5 mb-6 md:mb-12">
-                <div 
-                  style={{ backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5', borderColor: isDarkMode ? '#FFFFFF22' : '#111111' }}
-                  className="w-10 h-10 border-2 border-black flex items-center justify-center font-black rounded shadow-[2px_2px_0px_#11111126] dark:shadow-[2px_2px_0px_#00000045]"
-                >
-                  <FileText className="w-5 h-5 animate-pulse" style={{ stroke: isDarkMode ? '#F5F5F7' : '#111111' }} strokeWidth={2.2} />
-                </div>
-                <div className="flex flex-col text-left">
-                  <span className="text-sm font-black uppercase tracking-widest text-neutral-900 dark:text-neutral-100 leading-none">web notes</span>
-                  <span className="text-[9px] font-mono font-bold text-neutral-450 dark:text-neutral-500 uppercase tracking-wider">distraction-free</span>
-                </div>
-                <span className="text-[9px] font-mono font-bold bg-neutral-200/80 dark:bg-zinc-800 text-neutral-600 dark:text-neutral-400 px-1.5 py-0.5 rounded tracking-wide ml-2 uppercase">v2.1</span>
-              </div>
-
-              {/* Pitch Intro Headline */}
-              <div className="text-left max-w-xl">
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold pb-1 uppercase tracking-tight text-neutral-900 dark:text-white leading-[0.95] mb-4">
-                  Bring sanity back <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-500 via-amber-500 to-sky-500 dark:from-teal-400 dark:via-amber-400 dark:to-cyan-400">to your thinking.</span>
-                </h1>
-                
-                <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed mb-6 md:mb-10 font-normal">
-                  Web Notes strip away absolute UI complexity. It combines a pure, distraction-free typography editor with responsive client-side storage, mechanical typing sound profiles, and live web synchronizing.
-                </p>
-              </div>
-
-              {/* Minimal bullet checklist */}
-              <div className="flex flex-col gap-4 text-left max-w-xl mb-8">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 w-6 h-6 flex items-center justify-center rounded bg-emerald-500/15 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0 border border-emerald-500/20">
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black uppercase tracking-wider text-neutral-900 dark:text-neutral-100">Automatic Sync Options</h4>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-normal">
-                      Every single punctuation is persisted in real-time. Access, review, and edit across all developer boxes.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 w-6 h-6 flex items-center justify-center rounded bg-blue-500/15 dark:bg-blue-500/10 text-blue-600 dark:text-sky-400 shrink-0 border border-blue-500/20">
-                    <Shield className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black uppercase tracking-wider text-neutral-900 dark:text-neutral-100">Private Offline Workspaces</h4>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-normal">
-                      Write completely local manually. No registration or server storage path needed to sandbox your thinking.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 w-6 h-6 flex items-center justify-center rounded bg-amber-500/15 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0 border border-amber-500/20">
-                    <Keyboard className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black uppercase tracking-wider text-neutral-900 dark:text-neutral-100">Acoustic Feedback System</h4>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-normal">
-                      Turn on responsive vintage typing clicking. Enjoy mechanical thocks right inside your key inputs.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Offline Sandbox Bottom Row */}
-            <div className="mt-6 md:mt-12 border-t border-neutral-200 dark:border-neutral-800 pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="max-w-xs text-left">
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-0.5">anonymous local mode</h4>
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
-                  Skip the setup. Work completely cached inside your local browser memory database.
-                </p>
-              </div>
-
-              <button
-                id="landing-use-local-btn"
-                type="button"
-                onClick={() => {
-                  if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
-                  setUseLocalSession(true);
-                  localStorage.setItem('digital_window_offline_session', 'true');
-                }}
-                className={`px-5 py-2.5 text-xs font-black border-[2px] transition-all rounded-sm uppercase tracking-wider shadow-[3px_3px_0px_#00000015] dark:shadow-[3px_3px_0px_#00000060] hover:-translate-y-px active:translate-y-px active:shadow-[1px_1px_0px_#000] cursor-pointer text-center text-xs shrink-0 ${
-                  isDarkMode 
-                    ? 'text-neutral-300 hover:bg-neutral-800 hover:text-white border-neutral-700 bg-neutral-900' 
-                    : 'text-neutral-900 hover:bg-neutral-50 hover:text-black border-neutral-300 bg-white'
-                }`}
-              >
-                Launch Offline Sandbox
-              </button>
-            </div>
-
-          </div>
-
-          {/* RIGHT SIDE: Dedicated Auth Card & Form Section */}
-          <div 
-            style={{ backgroundColor: authFormBg }}
-            className="md:col-span-5 p-6 sm:p-8 flex flex-col justify-between text-left relative"
-          >
-            <div>
-              {/* Box Headline */}
-              <div className="mb-6">
-                <span className="text-[9px] font-mono font-black text-rose-500 dark:text-rose-450 uppercase tracking-widest block mb-1">CLOUD STORAGE CAPABILITIES</span>
-                <h2 className="text-xl font-bold uppercase tracking-tight text-neutral-900 dark:text-white flex items-center gap-1.5 leading-none">
-                  <span>Secure Cloud Sync</span>
-                </h2>
-                <p className="text-[11px] text-neutral-500 dark:text-zinc-500 leading-snug mt-1.5">
-                  Sign in or register an account to back up notes securely in our real-time Google Cloud setup.
-                </p>
-              </div>
-
-              {/* Login Tabs Selector */}
-              <div className="grid grid-cols-2 gap-1 p-1 rounded bg-neutral-200/50 dark:bg-zinc-950/60 border border-neutral-300/40 dark:border-neutral-800/80 mb-5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
-                    setActiveAuthTab('email');
-                    setAuthError(null);
-                  }}
-                  className={`text-[9.5px] font-mono font-black uppercase tracking-wider py-1.5 rounded transition-all cursor-pointer text-center ${
-                    activeAuthTab === 'email'
-                      ? 'bg-neutral-900 dark:bg-zinc-800 text-white dark:text-white shadow-sm font-black'
-                      : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-300'
-                  }`}
-                >
-                  Email & Password
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
-                    setActiveAuthTab('google');
-                    setAuthError(null);
-                  }}
-                  className={`text-[9.5px] font-mono font-black uppercase tracking-wider py-1.5 rounded transition-all cursor-pointer text-center ${
-                    activeAuthTab === 'google'
-                      ? 'bg-neutral-900 dark:bg-zinc-800 text-white dark:text-white shadow-sm font-black'
-                      : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-300'
-                  }`}
-                >
-                  Google OAuth
-                </button>
-              </div>
-
-              {/* ACTIVE TAB VIEWS */}
-              {activeAuthTab === 'email' ? (
-                /* Tab 1: Email & Password Form */
-                <form onSubmit={handleEmailAuthSubmit} className="flex flex-col gap-3 text-left">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[9px] font-mono uppercase tracking-wider font-extrabold opacity-75 text-neutral-700 dark:text-zinc-400">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@domain.com"
-                      className="w-full bg-white dark:bg-neutral-900 border-[2px] border-neutral-300 dark:border-neutral-800 hover:border-neutral-900 dark:hover:border-zinc-300 rounded px-2.5 py-2 text-xs font-sans text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white transition-all shadow-[2px_2px_0px_rgba(0,0,0,0.05)]"
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[9px] font-mono uppercase tracking-wider font-extrabold opacity-75 text-neutral-700 dark:text-zinc-400">
-                      Password
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-white dark:bg-neutral-900 border-[2px] border-neutral-300 dark:border-neutral-800 hover:border-neutral-900 dark:hover:border-zinc-300 rounded px-2.5 py-2 text-xs font-sans text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white transition-all shadow-[2px_2px_0px_rgba(0,0,0,0.05)]"
-                    />
-                  </div>
-
-                  {authSuccessMessage && (
-                    <div className="text-[10px] text-emerald-600 dark:text-emerald-450 font-mono font-medium block animate-fade-in py-1">
-                      ✓ {authSuccessMessage}
-                    </div>
-                  )}
-
-                  <div className="flex flex-col gap-2 mt-2">
-                    <button
-                      type="submit"
-                      disabled={authActionLoading}
-                      style={{
-                        backgroundColor: isDarkMode ? '#FFFFFF' : '#111111',
-                        color: isDarkMode ? '#111111' : '#FFFFFF',
-                        borderWidth: '2px',
-                        borderColor: 'black'
-                      }}
-                      className="w-full py-2.5 text-xs font-black transition-all shadow-[2.5px_2.5px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3.5px_3.5px_0px_#000] active:translate-y-px active:shadow-[1px_1px_0px_#000] disabled:opacity-50 uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer rounded-sm"
-                    >
-                      {authActionLoading ? (
-                        <>
-                          <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent animate-spin rounded-full" />
-                          <span>Processing...</span>
-                        </>
-                      ) : (
-                        <span>{isSignUp ? 'Create Cloud Account' : 'Sign In To Cloud'}</span>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
-                        setIsSignUp(!isSignUp);
-                        setAuthError(null);
-                        setAuthSuccessMessage(null);
-                      }}
-                      className="text-center text-[10px] underline hover:opacity-100 opacity-60 font-mono tracking-wide py-1 text-neutral-600 dark:text-zinc-400 cursor-pointer block"
-                    >
-                      {isSignUp ? 'Already have a cloud account? Sign In' : "Don't have a cloud account? Sign Up & Sync"}
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                /* Tab 2: Google Authentication (Redirect / Popup) */
-                <div className="flex flex-col gap-3 mt-1">
-                  {isInIframe && (
-                    <div className="flex flex-col gap-2 p-3 bg-[#e0f2fe]/40 dark:bg-sky-950/20 border-[2px] border-[#bae6fd] dark:border-sky-900/30 rounded mb-2 text-left animate-fade-in">
-                      <span className="text-[10px] font-mono font-black text-sky-750 dark:text-sky-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <Shield className="w-3.5 h-3.5 text-blue-500" />
-                        Recommended Tab Breakout
-                      </span>
-                      <p className="text-[10.5px] text-neutral-600 dark:text-zinc-400 leading-normal font-sans">
-                        Private/ordinary browsers block third-party cookies inside preview iframes. Break out to a fresh secure tab to log in instantly.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
-                          const loginUrl = new URL(window.location.href);
-                          loginUrl.searchParams.set('auth_trigger', 'google_redirect');
-                          window.open(loginUrl.toString(), '_blank');
-                        }}
-                        className="w-full mt-1.5 py-2 px-3 bg-blue-500 text-white font-black text-[10.5px] uppercase tracking-wider rounded border-[2px] border-black hover:bg-blue-600 active:translate-y-px transition-all shadow-[2px_2px_0px_#000] cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                        <span>Breakout & Auto-Sign-In</span>
-                      </button>
-                    </div>
-                  )}
-
-                  <span className="text-[10.5px] text-neutral-500 dark:text-zinc-550 leading-normal block mb-1">
-                    {isInIframe 
-                      ? "Or, attempt direct authentication inline (typically blocked in incognito/private windows):" 
-                      : "Authenticate instantly with your Google Account credential path."}
-                  </span>
-                  
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-1.5">
-                      <button
-                        id="landing-signin-redirect-btn"
-                        onClick={handleSignInRedirect}
-                        style={{
-                          backgroundColor: '#3b82f6',
-                          color: '#ffffff',
-                          borderWidth: '2px',
-                          borderColor: 'black'
-                        }}
-                        className="w-full py-2.5 text-xs font-black transition-all shadow-[2.5px_2.5px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3.5px_3.5px_0px_#000] active:translate-y-px active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer rounded-sm"
-                      >
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
-                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                        </svg>
-                        <span>Google Sign In (Redirect)</span>
-                      </button>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <button
-                        id="landing-signin-popup-btn"
-                        onClick={handleSignInPopup}
-                        style={{
-                          backgroundColor: isDarkMode ? '#2D2D35' : '#F4F4F5',
-                          color: isDarkMode ? '#F5F5F7' : '#111111',
-                          borderWidth: '2px',
-                          borderColor: 'black'
-                        }}
-                        className="w-full py-2.5 text-xs font-black transition-all shadow-[2px_2px_0px_#11111126] dark:shadow-[2px_2px_0px_#000] hover:-translate-y-[0.5px] hover:shadow-[3px_3px_0px_#11111126] active:translate-y-px active:shadow-[1px_1px_0px_#000] uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer rounded-sm"
-                      >
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 flex-shrink-0 bg-white p-0.5 rounded-full shadow-sm">
-                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                        </svg>
-                        <span>Google Sign In (Popup)</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* ERROR DIAGNOSTICS: Positioned elegantly inside the interactive right pane */}
-            {authError && (
-              <div id="landing-auth-error" style={{ borderColor: '#ef4444' }} className="text-left border-[2.5px] bg-red-400/5 dark:bg-red-950/10 text-red-700 dark:text-red-400 p-3 rounded-sm text-[11px] w-full mt-4 animate-fade-in font-mono">
-                <span className="font-extrabold uppercase block mb-1">⚠️ Security Connection Issue Details:</span>
-                <p className="leading-tight text-[10.5px] mb-1.5 break-all">{authError}</p>
-                
-                {authError.includes('Authorized Domain') && (
-                  <div className="mt-2 text-neutral-500 font-sans border-t border-red-500/20 pt-2 flex flex-col gap-1.5">
-                    <span className="font-extrabold text-[9px]">AUTHORIZED DOMAINS LIST ENFORCEMENT:</span>
-                    <code className="bg-neutral-100 dark:bg-neutral-900/60 px-2 py-1 rounded text-[10px] select-all font-mono border border-black/10 dark:border-white/10 text-center text-red-650 dark:text-red-400 font-bold">
-                      {window.location.hostname}
-                    </code>
-                    <a 
-                      href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="underline text-[10px] font-extrabold text-blue-600 dark:text-sky-400 block text-center"
-                    >
-                      Configure Firebase Auth Settings ↗
-                    </a>
-                                 {(authError.includes('email-already-in-use') || authError.includes('already in use')) && (
-                  <div className="mt-2 text-neutral-500 font-sans border-t border-red-500/20 pt-2 flex flex-col gap-1.5">
-                    <span className="font-extrabold text-[9px] text-red-600 dark:text-red-400">EMAIL ALREADY EXISTS:</span>
-                    <p className="text-[10px] opacity-75 leading-normal mb-1">
-                      This email address is already registered. If you already have an account, click the button below to switch to the Sign In screen and enter your password.
-                    </p>
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        if (keySoundsEnabled) playKeySound('Space', keySoundProfile);
-                        setIsSignUp(false);
-                        setAuthError(null);
-                        setAuthSuccessMessage(null);
-                      }}
-                      className="px-2.5 py-1.5 bg-neutral-100 dark:bg-neutral-800 border-2 border-black dark:border-zinc-700 font-black text-[9px] uppercase tracking-wider rounded text-neutral-800 dark:text-neutral-200 cursor-pointer self-center hover:-translate-y-px transition-all shadow-[1.5px_1.5px_0px_#000]"
-                    >
-                      Switch to Sign In instead ➜
-                    </button>
-                  </div>
-                )}
-
-                {(authError.includes('Email/Password') || authError.includes('enable Email/Password') || (authError.includes('operation-not-allowed') && activeAuthTab === 'email')) && (
-                  <div className="mt-2 text-neutral-500 font-sans border-t border-red-500/20 pt-2 flex flex-col gap-1.5">
-                    <span className="font-extrabold text-[9px] text-red-600 dark:text-red-400">EMAIL/PASSWORD SIGN-IN IS DISABLED:</span>
-                    <p className="text-[10px] opacity-75 leading-normal mb-1">
-                      Email and Password authentication is currently disabled in your Firebase project. Under Build ➜ Authentication ➜ Sign-in method, click "Add new provider", select "Email/Password", enable it, and save.
-                    </p>
-                    <a 
-                      href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="underline text-[10.5px] font-extrabold text-blue-650 dark:text-sky-400 block text-center"
-                    >
-                      Enable Email/Password sign-in in Firebase Console ↗
-                    </a>
-                  </div>
-                )}
-
-                {((authError.includes('Google') || authError.includes('google')) && (authError.includes('not enabled') || authError.includes('operation-not-allowed') || (authError.includes('operation-not-allowed') && activeAuthTab === 'google'))) && (
-                  <div className="mt-2 text-neutral-500 font-sans border-t border-red-500/20 pt-2 flex flex-col gap-1.5">
-                    <span className="font-extrabold text-[9px] text-red-600 dark:text-red-400">GOOGLE SIGN-IN IS DISABLED:</span>
-                    <p className="text-[10px] opacity-75 leading-normal mb-1">
-                      Google Sign-In has not been enabled in your Firebase project. Go to your Firebase Console under Authentication ➜ Sign-in method to enable Google as a sign-in provider.
-                    </p>
-                    <a 
-                      href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="underline text-[10.5px] font-extrabold text-blue-650 dark:text-sky-450 block text-center"
-                    >
-                      Enable Google Sign-In in Firebase Console ↗
-                    </a>
-                  </div>
-                )}     </div>
-                )}
-              </div>
-            )}
-
-            {/* Iframe Hint inside the right console card wrapper */}
-            {isInIframe && (
-              <div 
-                id="iframe-auth-warning"
-                className="mt-4 border-t border-dashed border-neutral-300 dark:border-neutral-800 pt-3 text-left z-10 text-[10.5px] select-none w-full transition-all flex flex-col justify-between gap-2.5 font-sans"
-              >
-                <p className="opacity-60 leading-normal">
-                  iFrame cookies blocks can sometimes affect login status. Open the application directly in a fresh tab to guarantee uninterrupted service.
-                </p>
-                <a 
-                  href={window.location.href} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  onClick={() => {
-                    if (keySoundsEnabled) playKeySound('Enter', keySoundProfile);
-                  }}
-                  className="px-3.5 py-2 text-[10px] font-black uppercase text-center tracking-wider bg-transparent hover:bg-neutral-100 dark:hover:bg-zinc-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-700 rounded-sm transition-all select-none cursor-pointer flex items-center justify-center gap-1.5"
-                  title="Breakout of the preview frame"
-                >
-                  <span>Open App in New Tab</span>
-                  <Maximize className="w-3.5 h-3.5 shrink-0" />
-                </a>
-              </div>
-            )}
-
-          </div>
-
-        </div>
-      </div>
-    );
-  }
 
   const funkyBorder = 'border-[3px] border-black';
   const funkyShadow = 'shadow-[6px_6px_0px_#000] hover:shadow-[3px_3px_0px_#000]';
@@ -2020,7 +1087,7 @@ export default function DigitalWindow() {
                   </div>
 
                   {/* Settings Tab Selector */}
-                  <div className="flex border-[3px] border-black p-0.5 bg-neutral-100 dark:bg-neutral-900 shadow-[2px_2px_0px_#000] flex-shrink-0 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
+                  <div className="grid grid-cols-3 border-[3px] border-black p-0.5 bg-neutral-100 dark:bg-neutral-900 shadow-[2px_2px_0px_#000] flex-shrink-0 text-[10px] sm:text-[10.5px] font-black tracking-wider uppercase">
                     {(['display', 'themes', 'sound'] as const).map(tab => (
                       <button
                         key={tab}
@@ -2031,15 +1098,15 @@ export default function DigitalWindow() {
                         } : {
                           color: themeModeSettings.cardText
                         }}
-                        className={`flex-1 py-1.5 text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        className={`py-1.5 text-center transition-all flex items-center justify-center gap-1 cursor-pointer ${
                           settingsTab === tab 
                             ? 'shadow-sm font-black' 
                             : 'opacity-75 hover:opacity-100 font-extrabold'
                         }`}
                       >
-                        {tab === 'display' && <Eye size={12} />}
-                        {tab === 'themes' && <Sun size={12} />}
-                        {tab === 'sound' && <Volume2 size={12} />}
+                        {tab === 'display' && <Eye size={11} />}
+                        {tab === 'themes' && <Sun size={11} />}
+                        {tab === 'sound' && <Volume2 size={11} />}
                         <span className="uppercase">{tab}</span>
                       </button>
                     ))}
@@ -2281,8 +1348,8 @@ export default function DigitalWindow() {
                         <div className="flex flex-col gap-1.5 w-full">
                           <div className="flex items-center justify-between w-full p-3 sm:p-4 border-[3px] border-black rounded-sm bg-black/5 relative">
                             <div className="flex flex-col text-left pr-2 flex-1 min-w-0">
-                              <span className="uppercase text-xs font-black tracking-wider leading-tight">Typing clicks</span>
-                              <span className="text-[10px] font-sans tracking-wide font-medium opacity-60 leading-normal mt-0.5">SATISFYING TYPEWRITER & MECHANICAL AUDIO</span>
+                               <span className="uppercase text-xs font-black tracking-wider leading-tight">Typing clicks</span>
+                               <span className="text-[10px] font-sans tracking-wide font-medium opacity-60 leading-normal mt-0.5">SATISFYING TYPEWRITER & MECHANICAL AUDIO</span>
                             </div>
                             <button
                               onClick={() => {
@@ -2410,6 +1477,8 @@ export default function DigitalWindow() {
                         </div>
                       </motion.div>
                     )}
+
+
 
 
                   </div>

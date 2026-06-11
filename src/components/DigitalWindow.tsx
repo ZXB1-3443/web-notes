@@ -1044,6 +1044,7 @@ export default function DigitalWindow() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.5 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0 }}
             onClick={() => {
               setIsSidebarPinned(false);
               setIsSidebarHovered(false);
@@ -1065,7 +1066,7 @@ export default function DigitalWindow() {
           backgroundColor: themeModeSettings.sidebarBg,
           color: themeModeSettings.text
         }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
+        transition={{ duration: 0 }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         className="sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-black absolute lg:relative left-0 top-0 bottom-0 transition-colors duration-200"

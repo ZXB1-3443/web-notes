@@ -1044,7 +1044,7 @@ export default function DigitalWindow() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.5 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
             onClick={() => {
               setIsSidebarPinned(false);
               setIsSidebarHovered(false);
@@ -1066,12 +1066,25 @@ export default function DigitalWindow() {
           backgroundColor: themeModeSettings.sidebarBg,
           color: themeModeSettings.text
         }}
-        transition={{ duration: 0 }}
+        transition={{ 
+          type: "spring",
+          stiffness: 320,
+          damping: 26
+        }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         className="sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-black absolute lg:relative left-0 top-0 bottom-0 transition-colors duration-200"
       >
-        <div 
+        <motion.div 
+          initial={false}
+          animate={{
+            x: isSidebarOpen ? 0 : (isMobile ? "-100vw" : "-384px")
+          }}
+          transition={{
+            type: "spring",
+            stiffness: 320,
+            damping: 26
+          }}
           style={{
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
             paddingBottom: isMobile 
@@ -1082,16 +1095,18 @@ export default function DigitalWindow() {
           }}
           className="w-[100vw] sm:w-[381px] flex-shrink-0 h-full flex flex-col gap-4 sm:gap-6 font-sans justify-between box-border min-h-0"
         >
-          <AnimatePresence mode="wait">
-            {isSettingsExpanded ? (
-              <motion.div
-                key="settings-group"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ duration: 0.15 }}
-                className="flex-1 flex flex-col gap-3 sm:gap-4 min-h-0 justify-between font-sans"
-              >
+          <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-1 relative">
+            <AnimatePresence>
+              {isSettingsExpanded ? (
+                <motion.div
+                  key="settings-group"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ type: "spring", stiffness: 320, damping: 26 }}
+                  style={{ gridArea: '1 / 1' }}
+                  className="w-full h-full flex flex-col gap-3 sm:gap-4 min-h-0 justify-between font-sans"
+                >
                 <div className="flex-1 flex flex-col gap-4 min-h-0">
                   <div className="flex justify-between items-center px-1 flex-shrink-0 pb-1.5 border-b-[3px] border-black">
                     <h2 className="text-xl font-black tracking-widest uppercase flex items-center gap-2">
@@ -1156,7 +1171,7 @@ export default function DigitalWindow() {
                               }}
                               className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
                               animate={{ x: showClock ? 20 : 0 }}
-                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                              transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
                             />
                           </button>
                         </div>
@@ -1185,7 +1200,7 @@ export default function DigitalWindow() {
                               }}
                               className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
                               animate={{ x: showStatusBar ? 20 : 0 }}
-                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                              transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
                             />
                           </button>
                         </div>
@@ -1214,7 +1229,7 @@ export default function DigitalWindow() {
                               }}
                               className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
                               animate={{ x: focusMode ? 20 : 0 }}
-                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                              transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
                             />
                           </button>
                         </div>
@@ -1243,7 +1258,7 @@ export default function DigitalWindow() {
                               }}
                               className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
                               animate={{ x: showGridBg ? 20 : 0 }}
-                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                              transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
                             />
                           </button>
                         </div>
@@ -1385,7 +1400,7 @@ export default function DigitalWindow() {
                                 }}
                                 className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
                                 animate={{ x: keySoundsEnabled ? 20 : 0 }}
-                                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
                               />
                             </button>
                           </div>
@@ -1481,7 +1496,7 @@ export default function DigitalWindow() {
                                     }}
                                     className="w-[16px] h-[16px] border-[2px] border-black flex-shrink-0 rounded-[1px] shadow-[1px_1px_0px_rgba(0,0,0,0.15)]"
                                     animate={{ x: bellSoundEnabled ? 20 : 0 }}
-                                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                    transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.7 }}
                                   />
                                 </button>
                               </div>
@@ -1516,8 +1531,9 @@ export default function DigitalWindow() {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.15 }}
-                className="flex-1 flex flex-col gap-3 sm:gap-4 min-h-0 justify-between"
+                transition={{ type: "spring", stiffness: 320, damping: 26 }}
+                style={{ gridArea: '1 / 1' }}
+                className="w-full h-full flex flex-col gap-3 sm:gap-4 min-h-0 justify-between"
               >
                 <div className="flex-1 flex flex-col gap-4 min-h-0">
                   <div className="flex justify-between items-center px-1 flex-shrink-0 pb-3 border-b-[3px] border-black/15 dark:border-white/10">
@@ -1643,6 +1659,7 @@ export default function DigitalWindow() {
             )}
           </AnimatePresence>
         </div>
+        </motion.div>
       </motion.div>
 
       {/* Main Container Area */}
@@ -1683,7 +1700,7 @@ export default function DigitalWindow() {
                   initial={{ opacity: 0, scale: 0.9, y: -10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                  transition={{ duration: 0.15 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
                   style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
                   className={`flex flex-shrink-0 items-center font-sans text-base sm:text-lg font-black tracking-widest uppercase tabular-nums px-4.5 border-[3px] border-black rounded-lg shadow-[3px_3px_0px_#000] select-none h-full`}
                 >
@@ -1703,7 +1720,7 @@ export default function DigitalWindow() {
                   initial={{ opacity: 0, scale: 0.8, x: 10 }}
                   animate={{ opacity: 1, scale: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.8, x: 10 }}
-                  transition={{ duration: 0.15 }}
+                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
                   style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
                   onClick={() => editor.chain().focus().undo().run()}
                   className={`${actionBtn}`}
@@ -1721,7 +1738,7 @@ export default function DigitalWindow() {
                   initial={{ opacity: 0, scale: 0.8, x: 10 }}
                   animate={{ opacity: 1, scale: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.8, x: 10 }}
-                  transition={{ duration: 0.15 }}
+                  transition={{ type: "spring", stiffness: 350, damping: 25 }}
                   style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
                   onClick={() => editor.chain().focus().redo().run()}
                   className={`${actionBtn}`}
@@ -1952,7 +1969,7 @@ export default function DigitalWindow() {
               initial={{ opacity: 0, y: 15, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.95 }}
-              transition={{ duration: 0.15, ease: 'easeOut' }}
+              transition={{ type: "spring", stiffness: 350, damping: 28 }}
               style={{
                 bottom: isMobile 
                   ? 'calc(env(safe-area-inset-bottom, 0px) + 72px)' 
@@ -2008,7 +2025,7 @@ export default function DigitalWindow() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.08, ease: "easeOut" }}
+                transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.8 }}
                 style={{
                   ...positionStyle,
                   backgroundColor: themeModeSettings.sidebarBg,
@@ -2201,6 +2218,7 @@ export default function DigitalWindow() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
               className="fixed inset-0 bg-black/75 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 font-sans"
               onClick={() => setNoteToDelete(null)}
             >
@@ -2208,6 +2226,7 @@ export default function DigitalWindow() {
                 initial={{ scale: 0.95, y: 15 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.95, y: 15 }}
+                transition={{ type: "spring", stiffness: 350, damping: 28, mass: 0.8 }}
                 style={{ backgroundColor: themeModeSettings.sidebarBg, color: themeModeSettings.text }}
                 className={`w-full max-w-sm border-[4px] border-black p-6 flex flex-col gap-4 text-center cursor-default shadow-[6px_6px_0px_#000]`}
                 onClick={(e) => e.stopPropagation()}

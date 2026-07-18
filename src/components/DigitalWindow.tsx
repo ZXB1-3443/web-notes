@@ -1078,7 +1078,7 @@ export default function DigitalWindow() {
         <div
           onMouseEnter={() => handleMouseEnter(350)}
           onMouseLeave={handleMouseLeave}
-          className="fixed left-0 top-[85px] bottom-0 w-[12vw] max-w-[120px] z-40 bg-transparent cursor-default"
+          className="fixed left-0 top-[85px] bottom-0 w-[12vw] min-w-[100px] max-w-[160px] z-40 bg-transparent cursor-default"
           title="Hover edge to reveal sidebar"
         />
       )}

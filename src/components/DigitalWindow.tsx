@@ -176,15 +176,21 @@ export default function DigitalWindow() {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.length > 0) {
-          // Real-time migration to remove duplicate 'welcome.' heading inside the body of existing welcome notes
+          // Real-time migration to remove duplicate 'welcome.' heading and inject open source/webnotes branding
           return parsed.map((note: Note) => {
-            if (note.title.toLowerCase() === 'welcome' && note.content.startsWith('<h2>welcome.</h2>')) {
-              return {
-                ...note,
-                content: note.content.replace('<h2>welcome.</h2>', '')
-              };
+            let updatedNote = { ...note };
+            if (updatedNote.title.toLowerCase() === 'welcome' || updatedNote.title === 'WebNotes') {
+              if (updatedNote.content.startsWith('<h2>welcome.</h2>')) {
+                updatedNote.content = updatedNote.content.replace('<h2>welcome.</h2>', '');
+              }
+              // Set the title to "WebNotes" as requested
+              updatedNote.title = 'WebNotes';
+              // Check if it is using the old welcome text (e.g. contains "beautiful open source" or "Welcome to WebNotes") and clean it up
+              if (updatedNote.content.includes('beautiful open source') || updatedNote.content.includes('Welcome to <strong>WebNotes</strong>') || !updatedNote.content.includes('An open source')) {
+                updatedNote.content = '<p>An open source, distraction-free environment designed to catch your thoughts, assemble your ideas, or simply write to the void.</p><p>Everything you compose here remains entirely local to your device—no cloud, no trackers, and no noise. Just you and the blinking cursor.</p><p><em>Where do we begin?</em></p>';
+              }
             }
-            return note;
+            return updatedNote;
           });
         }
       } catch (e) {
@@ -198,8 +204,8 @@ export default function DigitalWindow() {
     }
     return [{ 
       id: Date.now().toString(), 
-      title: 'Welcome', 
-      content: '<p>A calm, distraction-free environment designed to catch your thoughts, assemble your ideas, or simply write to the void.</p><p>Everything you compose here remains entirely local to your device—no cloud, no trackers, and no noise. Just you and the blinking cursor.</p><p><em>Where do we begin?</em></p>', 
+      title: 'WebNotes', 
+      content: '<p>An open source, distraction-free environment designed to catch your thoughts, assemble your ideas, or simply write to the void.</p><p>Everything you compose here remains entirely local to your device—no cloud, no trackers, and no noise. Just you and the blinking cursor.</p><p><em>Where do we begin?</em></p>', 
       updatedAt: Date.now() 
     }];
   });
@@ -2047,17 +2053,17 @@ export default function DigitalWindow() {
                 bottom: isMobile 
                   ? 'calc(env(safe-area-inset-bottom, 0px) + 72px)' 
                   : 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
-                backgroundColor: saveStatus === 'saving' ? (isDarkMode ? '#D97706' : '#FEF3C7') : themeModeSettings.cardBg,
-                color: saveStatus === 'saving' ? (isDarkMode ? '#FFFFFF' : '#1F2937') : themeModeSettings.cardText
+                backgroundColor: themeModeSettings.cardBg,
+                color: themeModeSettings.cardText
               }}
               className={`fixed left-4 z-40 border-[3px] border-black ${funkyShadow} px-3 py-1.5 font-mono text-xs font-black flex items-center gap-2.5 select-none`}
             >
               <div className="relative flex h-2 w-2 items-center justify-center">
                 {saveStatus === 'saving' && (
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
                 )}
                 <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                  saveStatus === 'saving' ? 'bg-amber-500' : 'bg-emerald-500'
+                  saveStatus === 'saving' ? 'bg-blue-500' : 'bg-emerald-500'
                 }`} />
               </div>
               <span className="uppercase tracking-wider">

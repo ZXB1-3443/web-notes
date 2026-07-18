@@ -71,8 +71,8 @@ const APP_THEMES: AppTheme[] = [
       text: '#F5F5F7',
       cardBg: '#1F1F24',
       cardText: '#F5F5F7',
-      activeNoteBg: '#A1A1AA',
-      activeNoteText: '#111111'
+      activeNoteBg: '#2D2D33',
+      activeNoteText: '#F5F5F7'
     }
   },
   {
@@ -93,8 +93,8 @@ const APP_THEMES: AppTheme[] = [
       text: '#f8f8f2',
       cardBg: '#282a36',
       cardText: '#f8f8f2',
-      activeNoteBg: '#ff79c6',
-      activeNoteText: '#000000'
+      activeNoteBg: '#4C2A3D',
+      activeNoteText: '#f8f8f2'
     }
   },
   {
@@ -115,8 +115,8 @@ const APP_THEMES: AppTheme[] = [
       text: '#00FF9C',
       cardBg: '#1E2235',
       cardText: '#00E5FF',
-      activeNoteBg: '#FF007F',
-      activeNoteText: '#FFFFFF'
+      activeNoteBg: '#440F2D',
+      activeNoteText: '#00FF9C'
     }
   },
   {
@@ -137,8 +137,8 @@ const APP_THEMES: AppTheme[] = [
       text: '#E2ECE9',
       cardBg: '#1D2721',
       cardText: '#E2ECE9',
-      activeNoteBg: '#5EA175',
-      activeNoteText: '#FFFFFF'
+      activeNoteBg: '#23382B',
+      activeNoteText: '#E2ECE9'
     }
   },
   {
@@ -159,8 +159,8 @@ const APP_THEMES: AppTheme[] = [
       text: '#E1D9F5',
       cardBg: '#231842',
       cardText: '#F1E6FF',
-      activeNoteBg: '#8A2BE2',
-      activeNoteText: '#FFFFFF'
+      activeNoteBg: '#2E184A',
+      activeNoteText: '#F1E6FF'
     }
   }
 ];
@@ -750,9 +750,16 @@ export default function DigitalWindow() {
     );
   };
 
+  const triggerDeleteNote = (id: string) => {
+    setActiveNoteId(id);
+    setIsSidebarPinned(false);
+    setIsSidebarHovered(false);
+    setNoteToDelete(id);
+  };
+
   const handleDeleteNote = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    setNoteToDelete(id);
+    triggerDeleteNote(id);
   };
 
   useEffect(() => {
@@ -808,7 +815,7 @@ export default function DigitalWindow() {
       if (isMeta && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) {
         e.preventDefault();
         if (activeNoteId) {
-          setNoteToDelete(activeNoteId);
+          triggerDeleteNote(activeNoteId);
         }
       }
 
@@ -861,6 +868,21 @@ export default function DigitalWindow() {
     if (e.shiftKey) return;
 
     const target = e.target as HTMLElement;
+    
+    // Do not show custom context menu if right-clicking on a divider (horizontal rule)
+    const isDivider = 
+      target.tagName === 'HR' || 
+      target.closest('hr') || 
+      target.closest('[data-type="horizontalRule"]') ||
+      (target.classList.contains('ProseMirror-selectednode') && target.querySelector('hr')) ||
+      target.closest('.ProseMirror-selectednode') ||
+      (editor && !editor.isDestroyed && editor.state.selection && 'node' in editor.state.selection && (editor.state.selection as any).node?.type?.name === 'horizontalRule' && target.closest('.tiptap'));
+      
+    if (isDivider) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     
     // Allow default right-click inside the search input or buttons not related to editor components
     const isSearchInputOrSidebarButton = target.closest('input') && !target.closest('.title-input-field') && !target.classList.contains('tiptap') && !target.closest('.tiptap');
@@ -921,15 +943,15 @@ export default function DigitalWindow() {
         .border-\\[3px\\],
         .border-\\[4px\\],
         .border-\\[2\\.5px\\] {
-          border-color: ${themeModeSettings.text}55 !important; /* Soft, themed border accent */
+          border-color: ${isDarkMode ? `${themeModeSettings.text}1F` : `${themeModeSettings.text}55`} !important; /* Soft, themed border accent */
         }
 
         .border-black\\/15 {
-          border-color: ${themeModeSettings.text}22 !important;
+          border-color: ${isDarkMode ? `${themeModeSettings.text}10` : `${themeModeSettings.text}22`} !important;
         }
         
         .border-black\\/10 {
-          border-color: ${themeModeSettings.text}18 !important;
+          border-color: ${isDarkMode ? `${themeModeSettings.text}0C` : `${themeModeSettings.text}18`} !important;
         }
 
         /* 2. Soft translucent shadows for retro components, cards, buttons, avoiding harsh solid dark/light */
@@ -971,6 +993,30 @@ export default function DigitalWindow() {
         .menu-btn:hover {
           background-color: ${themeModeSettings.activeNoteBg} !important;
           color: ${themeModeSettings.activeNoteText} !important;
+        }
+
+        /* Context Menu item styles */
+        .context-menu-item {
+          color: ${themeModeSettings.cardText} !important;
+          border: 2px solid transparent !important;
+          background-color: transparent !important;
+          transition: all 75ms ease-out !important;
+        }
+        .context-menu-item:hover:not(:disabled) {
+          background-color: ${themeModeSettings.activeNoteBg} !important;
+          color: ${themeModeSettings.activeNoteText} !important;
+          border-color: ${themeModeSettings.text}33 !important;
+        }
+        .context-menu-delete-item {
+          color: #ff5555 !important;
+          border: 2px solid transparent !important;
+          background-color: transparent !important;
+          transition: all 75ms ease-out !important;
+        }
+        .context-menu-delete-item:hover:not(:disabled) {
+          background-color: #ff5555 !important;
+          color: #ffffff !important;
+          border-color: #ff5555 !important;
         }
         
         /* 5. Custom scrollbar track/thumb thematic integration */
@@ -1030,9 +1076,9 @@ export default function DigitalWindow() {
       {/* Extreme Left Hover Detector Strip */}
       {!isSidebarOpen && !focusMode && (
         <div
-          onMouseEnter={() => handleMouseEnter(550)}
+          onMouseEnter={() => handleMouseEnter(350)}
           onMouseLeave={handleMouseLeave}
-          className="fixed left-0 top-0 bottom-0 w-4 z-40 bg-transparent cursor-default"
+          className="fixed left-0 top-[85px] bottom-0 w-[12vw] max-w-[120px] z-40 bg-transparent cursor-default"
           title="Hover edge to reveal sidebar"
         />
       )}
@@ -1059,8 +1105,6 @@ export default function DigitalWindow() {
         initial={false}
         animate={{ 
           width: isSidebarOpen ? (isMobile ? "100vw" : "384px") : "0px",
-          borderRightWidth: (isSidebarOpen && !isMobile) ? 3 : 0,
-          boxShadow: (isSidebarOpen && !isMobile) ? `8.5px 0px 0px ${themeModeSettings.text}` : `0px 0px 0px ${themeModeSettings.text}`
         }}
         style={{
           backgroundColor: themeModeSettings.sidebarBg,
@@ -1073,7 +1117,10 @@ export default function DigitalWindow() {
         }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-black absolute lg:relative left-0 top-0 bottom-0 transition-colors duration-200"
+        onClick={() => {
+          setIsSidebarPinned(true);
+        }}
+        className="sidebar-container h-full z-50 flex-shrink-0 overflow-hidden border-r border-black/10 absolute lg:relative left-0 top-0 bottom-0 transition-colors duration-200 select-none"
       >
         <motion.div 
           initial={false}
@@ -1516,6 +1563,7 @@ export default function DigitalWindow() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      setIsSidebarPinned(true);
                       setIsSettingsExpanded(false);
                     }}
                     style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
@@ -1552,6 +1600,7 @@ export default function DigitalWindow() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          setIsSidebarPinned(true);
                           setIsSettingsExpanded(true);
                         }}
                         style={{ backgroundColor: themeModeSettings.cardBg, color: themeModeSettings.cardText }}
@@ -1671,13 +1720,13 @@ export default function DigitalWindow() {
             paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 16px)',
             paddingRight: 'calc(env(safe-area-inset-right, 0px) + 16px)'
           }}
-          className={`w-full flex flex-row justify-between items-center gap-2 sm:gap-6 font-bold text-sm tracking-wide relative z-20 flex-shrink-0 transition-opacity duration-300 ${focusMode ? 'focus-mode-nav-hidden opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}
+          className={`w-full flex flex-row justify-between items-center gap-2 sm:gap-6 font-bold text-sm tracking-wide relative z-20 flex-shrink-0 transition-opacity duration-300 select-none ${focusMode ? 'focus-mode-nav-hidden opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}
         >
             <div className="flex sm:flex-1 justify-start gap-4 items-center flex-shrink-0">
             {!isSidebarOpen && (
               <button
                 style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
-                onMouseEnter={handleMouseEnter}
+                onMouseEnter={() => handleMouseEnter(750)}
                 onMouseLeave={handleMouseLeave}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1694,21 +1743,29 @@ export default function DigitalWindow() {
           
           <div className="hidden sm:flex justify-center flex-shrink-0 h-[46px]">
             <AnimatePresence>
-              {showClock && (
-                <motion.div
-                  key="clock-display"
-                  initial={{ opacity: 0, scale: 0.9, y: -10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                  style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
-                  className={`flex flex-shrink-0 items-center font-sans text-base sm:text-lg font-black tracking-widest uppercase tabular-nums px-4.5 border-[3px] border-black rounded-lg shadow-[3px_3px_0px_#000] select-none h-full`}
-                >
-                  <span className="tracking-tight uppercase">
-                    {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                  </span>
-                </motion.div>
-              )}
+              {showClock && (() => {
+                const { hoursStr, minutesStr, ampm } = formatClockTime(time);
+                return (
+                  <motion.div
+                    key="clock-display"
+                    initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                    style={{ backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText }}
+                    className={`flex flex-shrink-0 items-center px-4 border-[3px] border-black rounded-sm shadow-[3px_3px_0px_#000] select-none h-full text-base sm:text-lg font-black uppercase ${
+                      fontPreference === 'mono' ? 'font-mono tracking-widest' :
+                      fontPreference === 'serif' ? 'font-serif tracking-normal' :
+                      'font-sans tracking-wide'
+                    }`}
+                  >
+                    <span>{hoursStr}</span>
+                    <span className={`mx-0.5 transition-opacity duration-200 ${time.getSeconds() % 2 === 0 ? 'opacity-100' : 'opacity-20'}`}>:</span>
+                    <span>{minutesStr}</span>
+                    <span className="ml-2 text-xs font-black opacity-80">{ampm}</span>
+                  </motion.div>
+                );
+              })()}
             </AnimatePresence>
           </div>
           
@@ -1800,24 +1857,23 @@ export default function DigitalWindow() {
 
           <div ref={editorRelativeContainerRef} className="w-full max-w-[1600px] flex-1 flex-shrink-0 relative">
             {editor && !editor.isDestroyed && (
-              <BubbleMenu 
-                editor={editor} 
-                shouldShow={({ state }) => {
-                  if (state.selection && 'node' in state.selection) {
-                    const nodeSel = state.selection as any;
-                    if (nodeSel.node && nodeSel.node.type.name === 'horizontalRule') {
-                      return true;
+              <>
+                {/* Bubble Menu for Dividers */}
+                <BubbleMenu 
+                  editor={editor} 
+                  shouldShow={({ state }) => {
+                    if (state.selection && 'node' in state.selection) {
+                      const nodeSel = state.selection as any;
+                      return !!(nodeSel.node && nodeSel.node.type.name === 'horizontalRule');
                     }
-                  }
-                  return !state.selection.empty;
-                }}
-                style={{
-                  backgroundColor: themeModeSettings.cardBg,
-                  color: themeModeSettings.cardText
-                }}
-                className={`flex gap-1 p-2 rounded-lg z-50 border-[3px] border-black shadow-[4px_4px_0px_#000]`}
-              >
-                {editor.state.selection && 'node' in editor.state.selection && (editor.state.selection as any).node?.type.name === 'horizontalRule' ? (
+                    return false;
+                  }}
+                  style={{
+                    backgroundColor: themeModeSettings.cardBg,
+                    color: themeModeSettings.cardText
+                  }}
+                  className={`flex gap-1 p-2 rounded-lg z-50 border-[3px] border-black shadow-[4px_4px_0px_#000]`}
+                >
                   <button
                     onClick={() => {
                       editor.chain().focus().deleteSelection().run();
@@ -1828,110 +1884,127 @@ export default function DigitalWindow() {
                     <Trash2 size={16} />
                     <span>Delete Selected Divider</span>
                   </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => editor.chain().focus().toggleBold().run()}
-                      style={editor.isActive('bold') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Bold"
-                    >
-                      <Bold size={16} />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleItalic().run()}
-                      style={editor.isActive('italic') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Italic"
-                    >
-                      <Italic size={16} />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleUnderline().run()}
-                      style={editor.isActive('underline') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Underline"
-                    >
-                      <UnderlineIcon size={16} />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleStrike().run()}
-                      style={editor.isActive('strike') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Strikethrough"
-                    >
-                      <Strikethrough size={16} />
-                    </button>
-                    <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
-                    <button
-                      onClick={() => editor.chain().focus().setParagraph().run()}
-                      style={editor.isActive('paragraph') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Body text (Paragraph)"
-                    >
-                      <Type size={16} />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-                      style={editor.isActive('heading', { level: 1 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Heading 1"
-                    >
-                      <Heading1 size={16} />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                      style={editor.isActive('heading', { level: 2 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Heading 2"
-                    >
-                      <Heading2 size={16} />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-                      style={editor.isActive('heading', { level: 3 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Heading 3"
-                    >
-                      <Heading3 size={16} />
-                    </button>
-                    <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
-                    <button
-                      onClick={() => editor.chain().focus().toggleBulletList().run()}
-                      style={editor.isActive('bulletList') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Bullet List"
-                    >
-                      <List size={16} />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                      style={editor.isActive('orderedList') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Ordered List"
-                    >
-                      <ListOrdered size={16} />
-                    </button>
-                    <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
-                    <button
-                      onClick={() => editor.chain().focus().toggleBlockquote().run()}
-                      style={editor.isActive('blockquote') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
-                      className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
-                      title="Blockquote"
-                    >
-                      <Quote size={16} />
-                    </button>
-                    <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
-                    <button
-                      onClick={() => editor.chain().focus().deleteSelection().run()}
-                      className="p-2 rounded hover:bg-red-500/20 text-red-500 dark:text-red-400"
-                      title="Delete Selection"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </>
-                )}
               </BubbleMenu>
+
+              {/* Bubble Menu for Text Formatting */}
+              <BubbleMenu 
+                editor={editor} 
+                shouldShow={({ state }) => {
+                  if (state.selection && 'node' in state.selection) {
+                    const nodeSel = state.selection as any;
+                    if (nodeSel.node && nodeSel.node.type.name === 'horizontalRule') {
+                      return false;
+                    }
+                  }
+                  return !state.selection.empty;
+                }}
+                style={{
+                  backgroundColor: themeModeSettings.cardBg,
+                  color: themeModeSettings.cardText
+                }}
+                className={`flex gap-1 p-2 rounded-lg z-50 border-[3px] border-black shadow-[4px_4px_0px_#000]`}
+              >
+                <button
+                  onClick={() => editor.chain().focus().toggleBold().run()}
+                  style={editor.isActive('bold') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Bold"
+                >
+                  <Bold size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleItalic().run()}
+                  style={editor.isActive('italic') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Italic"
+                >
+                  <Italic size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleUnderline().run()}
+                  style={editor.isActive('underline') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Underline"
+                >
+                  <UnderlineIcon size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleStrike().run()}
+                  style={editor.isActive('strike') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Strikethrough"
+                >
+                  <Strikethrough size={16} />
+                </button>
+                <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
+                <button
+                  onClick={() => editor.chain().focus().setParagraph().run()}
+                  style={editor.isActive('paragraph') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Body text (Paragraph)"
+                >
+                  <Type size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                  style={editor.isActive('heading', { level: 1 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Heading 1"
+                >
+                  <Heading1 size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                  style={editor.isActive('heading', { level: 2 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Heading 2"
+                >
+                  <Heading2 size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+                  style={editor.isActive('heading', { level: 3 }) ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Heading 3"
+                >
+                  <Heading3 size={16} />
+                </button>
+                <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
+                <button
+                  onClick={() => editor.chain().focus().toggleBulletList().run()}
+                  style={editor.isActive('bulletList') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Bullet List"
+                >
+                  <List size={16} />
+                </button>
+                <button
+                  onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                  style={editor.isActive('orderedList') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Ordered List"
+                >
+                  <ListOrdered size={16} />
+                </button>
+                <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
+                <button
+                  onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                  style={editor.isActive('blockquote') ? { backgroundColor: themeModeSettings.activeNoteBg, color: themeModeSettings.activeNoteText } : { color: themeModeSettings.cardText }}
+                  className={`p-2 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                  title="Blockquote"
+                >
+                  <Quote size={16} />
+                </button>
+                <div style={{ backgroundColor: themeModeSettings.cardText + '25' }} className="w-px h-6 my-auto mx-1" />
+                <button
+                  onClick={() => editor.chain().focus().deleteSelection().run()}
+                  className="p-2 rounded hover:bg-red-500/20 text-red-500 dark:text-red-400"
+                  title="Delete Selection"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </BubbleMenu>
+              </>
             )}
             {editor && !editor.isDestroyed && <EditorContent editor={editor} />}
           </div>
@@ -1952,7 +2025,7 @@ export default function DigitalWindow() {
                 backgroundColor: themeModeSettings.cardBg,
                 color: themeModeSettings.cardText
               }}
-              className={`fixed z-40 border-[3px] border-black ${funkyShadow} px-4 py-2 font-mono text-xs font-black flex items-center gap-4`}
+              className={`fixed z-40 border-[3px] border-black ${funkyShadow} px-4 py-2 font-mono text-xs font-black flex items-center gap-4 select-none`}
             >
               <span>{words} WORDS</span>
               <div className="w-1 h-3 bg-black/40" />
@@ -1977,7 +2050,7 @@ export default function DigitalWindow() {
                 backgroundColor: saveStatus === 'saving' ? (isDarkMode ? '#D97706' : '#FEF3C7') : themeModeSettings.cardBg,
                 color: saveStatus === 'saving' ? (isDarkMode ? '#FFFFFF' : '#1F2937') : themeModeSettings.cardText
               }}
-              className={`fixed left-4 z-40 border-[3px] border-black ${funkyShadow} px-3 py-1.5 font-mono text-xs font-black flex items-center gap-2.5`}
+              className={`fixed left-4 z-40 border-[3px] border-black ${funkyShadow} px-3 py-1.5 font-mono text-xs font-black flex items-center gap-2.5 select-none`}
             >
               <div className="relative flex h-2 w-2 items-center justify-center">
                 {saveStatus === 'saving' && (
@@ -2028,10 +2101,10 @@ export default function DigitalWindow() {
                 transition={{ type: "spring", stiffness: 380, damping: 28, mass: 0.8 }}
                 style={{
                   ...positionStyle,
-                  backgroundColor: themeModeSettings.sidebarBg,
-                  color: themeModeSettings.text
+                  backgroundColor: themeModeSettings.cardBg,
+                  color: themeModeSettings.cardText
                 }}
-                className="w-[220px] border-[3px] border-black shadow-[4px_4px_0px_#000] font-sans text-xs overflow-y-auto custom-scrollbar p-1 flex flex-col"
+                className="w-[220px] border-[3px] border-black shadow-[4px_4px_0px_#000] font-sans text-xs overflow-y-auto custom-scrollbar p-1 flex flex-col select-none"
               >
                 {/* Note Quick Control Section */}
                 <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest font-black uppercase opacity-50 border-b-2 border-black/10 dark:border-white/10 mb-1 select-none">
@@ -2043,7 +2116,7 @@ export default function DigitalWindow() {
                     createNewNote();
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2"><Plus size={14} /> Create New</span>
                 </button>
@@ -2053,17 +2126,17 @@ export default function DigitalWindow() {
                     exportNoteAsTxt();
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2"><Download size={14} /> Export (.txt)</span>
                 </button>
 
                 <button
                   onClick={() => {
-                    setNoteToDelete(activeNoteId);
+                    triggerDeleteNote(activeNoteId);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-[#ff5555] hover:text-white dark:hover:bg-[#ff5555] border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-[#ff5555] dark:text-[#ff5555] hover:!text-white cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-delete-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 cursor-pointer"
                 >
                   <span className="flex items-center gap-2"><Trash2 size={14} /> Delete Note</span>
                 </button>
@@ -2087,7 +2160,7 @@ export default function DigitalWindow() {
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
                 >
                   <span className="flex items-center gap-2"><Copy size={14} /> Copy</span>
                 </button>
@@ -2104,7 +2177,7 @@ export default function DigitalWindow() {
                     }
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
                 >
                   <span className="flex items-center gap-2"><Clipboard size={14} /> Paste</span>
                 </button>
@@ -2117,7 +2190,7 @@ export default function DigitalWindow() {
                 <button
                   disabled={!editor}
                   onClick={() => insertTimestamp()}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
                 >
                   <span className="flex items-center gap-2">
                     <Clock size={14} />
@@ -2128,7 +2201,7 @@ export default function DigitalWindow() {
                 <button
                   disabled={!editor}
                   onClick={() => insertHorizontalLine()}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer disabled:opacity-30"
                 >
                   <span className="flex items-center gap-2">
                     <Minus size={14} />
@@ -2148,7 +2221,7 @@ export default function DigitalWindow() {
                     setFocusMode(p => !p);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     {focusMode ? <Eye size={14} /> : <EyeOff size={14} />} 
@@ -2162,7 +2235,7 @@ export default function DigitalWindow() {
                     setIsDarkMode(p => !p);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
@@ -2176,7 +2249,7 @@ export default function DigitalWindow() {
                     setShowClock(p => !p);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     <Maximize size={14} />
@@ -2190,7 +2263,7 @@ export default function DigitalWindow() {
                     setShowStatusBar(p => !p);
                     setContextMenu(null);
                   }}
-                  className="w-full text-left px-2.5 py-1.5 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black border-2 border-transparent hover:border-black font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
+                  className="w-full text-left px-2.5 py-1.5 context-menu-item font-extrabold uppercase flex items-center justify-between transition-all duration-75 text-inherit cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
                     <Info size={14} />

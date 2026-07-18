@@ -1074,7 +1074,7 @@ export default function DigitalWindow() {
       `}</style>
 
       {/* Extreme Left Hover Detector Strip */}
-      {!isSidebarOpen && !focusMode && (
+      {!isSidebarOpen && (
         <div
           onMouseEnter={() => handleMouseEnter(350)}
           onMouseLeave={handleMouseLeave}
